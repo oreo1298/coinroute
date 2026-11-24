@@ -33,10 +33,18 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+## Docs
+
+- [FORMATS.md](FORMATS.md) — ExpressNet file layouts
+- [docs/ROADMAP.md](docs/ROADMAP.md) — milestones and the next one in detail
+- [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) — what is known about XNET.EXE and the protocol
+- [CLAUDE.md](CLAUDE.md) — rules and commands for working on this repo
+
 ## Tools
 
-`tools/fake_upms.py` — a stand-in for the Protel UPMS1200 modem, to test
-ExpressNet (in a VM) or coinroute without the real modem. See its `--help`.
+- `tools/fake_upms.py` — a stand-in for the Protel UPMS1200 modem, to test
+  ExpressNet (in a VM) or coinroute without the real modem. See its `--help`.
+- `tools/re/ne.py` — helper for studying XNET.EXE (bring your own copy).
 
 ## Tests
 

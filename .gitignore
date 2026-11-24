@@ -1,4 +1,14 @@
-# Never commit customer data
+# Never commit customer data or Protel's files
+*.EXE
+*.exe
+*.OVL
+*.ovl
+*.zip
+*.img
+*.iso
+*.bundle
+*.log
+fake_upms_*.log
 XNET/
 xnet/
 *.DAT
