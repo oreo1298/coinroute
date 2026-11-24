@@ -3,15 +3,35 @@
 | # | Milestone | State |
 |---|---|---|
 | 1 | Import an ExpressNet folder into SQLite (+ CLI, summary, CSV) | ✅ done |
-| 2 | Qt desktop app over the imported data | **next** |
-| 3 | Decode the remaining fields | partly — see FORMATS.md ❓ entries |
+| 2 | Qt desktop app over the imported data | ✅ done |
+| 3 | Decode the remaining fields | **next** — partly done, see FORMATS.md ❓ entries |
 | 4 | Payphone protocol + simulated payphone | planned |
 | 5 | Polling service over the UPMS1200 | planned |
 | 6 | Programming: rates, options, firmware downloads | planned |
 
 ---
 
-## Milestone 2 — Qt desktop app (PySide6)
+## Milestone 2 — Qt desktop app (PySide6) ✅
+
+Done. How it turned out, where it differs from the plan below:
+
+- `src/coinroute/demo.py` + `coinroute demo`; the record builders moved there
+  from `tests/fakexnet.py`.
+- `src/coinroute/db.py` (`RouteDB`) holds all SQL; opened read-only; keyset
+  paging for comm errors and calls (a real route's busiest phone has ~105k
+  calls; pages come back in milliseconds).
+- The coin chart is drawn with QPainter, not QtCharts: two panels on one time
+  axis (cash in box, lifetime total) rather than two y-scales; lines break
+  across gaps of more than 3 days; crosshair readout. No PySide6-Addons
+  dependency.
+- Site detail opens as a closable tab in the main window.
+- Extras: status chips that filter, "Show removed sites" (phones whose site
+  record was deleted but which once answered), `coinroute summary --removed`,
+  `tools/screenshots.py`, dark-palette colours.
+- Status thresholds (`db.OK_DAYS = 2`, `db.AMBER_DAYS = 30`) are measured from
+  the end of the data, as in Milestone 1's summary.
+
+The original plan:
 
 Goal: an operator can open their imported route and see, without SQL, which
 phones are working, what is in each cash box, and what went wrong.
@@ -68,15 +88,16 @@ groups, users (password hidden behind a "show" toggle).
 out of `report.py` into it.
 
 ### Acceptance (all headless)
-- [ ] `coinroute demo /tmp/d && coinroute import /tmp/d/XNET /tmp/d.db` works.
-- [ ] `QT_QPA_PLATFORM=offscreen pytest -q` passes, including pytest-qt tests for:
+- [x] `coinroute demo /tmp/d && coinroute import /tmp/d/XNET /tmp/d.db` works.
+- [x] `QT_QPA_PLATFORM=offscreen pytest -q` passes, including pytest-qt tests for:
       the sites model (rows, colours, filtering), the import worker end to end on
       demo data, the detail tabs populating, paging on the calls tab.
-- [ ] Screenshots of the main window, a site detail (each tab) and the import
+- [x] Screenshots of the main window, a site detail (each tab) and the import
       result dialog have been rendered to PNG and checked by eye; attach them to
-      the PR description.
-- [ ] Core modules still import without PySide6 installed.
-- [ ] README updated with how to start the GUI.
+      the PR description. (`docs/screenshots/`, made by `tools/screenshots.py`.)
+- [x] Core modules still import without PySide6 installed
+      (`tests/test_core_without_qt.py`).
+- [x] README updated with how to start the GUI.
 
 Later (not required for M2): PyInstaller build for Windows; printable reports
 (Coin Report and Trouble Report layouts like ExpressNet's, as HTML/PDF).
