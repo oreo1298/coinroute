@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coinroute"
+dynamic = ["version"]
+description = "Payphone route manager: reads Protel ExpressNet data and (later) polls Protel payphones"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+modem = ["pyserial>=3.5"]
+
+[project.scripts]
+coinroute = "coinroute.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "coinroute.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

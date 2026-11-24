@@ -1,0 +1,19 @@
+# Never commit customer data
+XNET/
+xnet/
+*.DAT
+*.IDX
+*.dat
+*.idx
+*.db
+*.db-journal
+data/
+exports/
+
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
