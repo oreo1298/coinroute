@@ -85,6 +85,10 @@ coinroute gui /tmp/demo.db
 - `tools/re/ne.py` — helper for studying XNET.EXE (bring your own copy).
 - `tools/screenshots.py` — renders every screen of the app from the demo
   route to PNG files (works headless: `QT_QPA_PLATFORM=offscreen`).
+- `tools/try-it.sh` — one command to update a checkout, install into `.venv`,
+  run the tests and open the app on the demo route: `bash tools/try-it.sh`
+  (`--shots` also saves screenshots as your desktop draws them, `--no-gui`
+  stops before opening the app).
 
 ## Tests
 
