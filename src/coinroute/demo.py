@@ -9,6 +9,7 @@ without anybody's real route data.
 
 The same seed always produces byte-identical files.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -21,15 +22,15 @@ from pathlib import Path
 from .fields import datetime_to_minutes
 from .scramble import KEY_SALT_OFFSET, PW_OFFSET, encode_password, password_key, scramble_syspar
 
-DEMO_END = dt.datetime(2026, 5, 2, 1, 5)       # the last nightly poll run in the demo data
+DEMO_END = dt.datetime(2026, 5, 2, 1, 5)  # the last nightly poll run in the demo data
 
 # --- low-level record builders ------------------------------------------------------
 
 
 def put(buf: bytearray, off: int, text: str, width: int) -> None:
     """Write a NUL-terminated string into a fixed-width field."""
-    b = text.encode("latin-1")[:width - 1]
-    buf[off:off + width] = b + b"\0" * (width - len(b))
+    b = text.encode("latin-1")[: width - 1]
+    buf[off : off + width] = b + b"\0" * (width - len(b))
 
 
 def header(reclen: int, variable: bool = False) -> bytearray:
@@ -72,7 +73,9 @@ def var_file(recs: list[bytes], garbage_after: int | None = None, garbage: bytes
     return bytes(out)
 
 
-def cdr_header(reclen: int, phone: str, when: dt.datetime, group: str = "000100", site: str = "100") -> bytearray:
+def cdr_header(
+    reclen: int, phone: str, when: dt.datetime, group: str = "000100", site: str = "100"
+) -> bytearray:
     r = bytearray(reclen)
     put(r, 1, group, 7)
     put(r, 8, site.ljust(8), 9)
@@ -83,8 +86,14 @@ def cdr_header(reclen: int, phone: str, when: dt.datetime, group: str = "000100"
     return r
 
 
-def coin(phone: str, when: dt.datetime, total: int, box: int, status: bytes = bytes.fromhex("0001006000020000"),
-         **kw) -> bytes:
+def coin(
+    phone: str,
+    when: dt.datetime,
+    total: int,
+    box: int,
+    status: bytes = bytes.fromhex("0001006000020000"),
+    **kw,
+) -> bytes:
     """CDR/COIN.DAT record: lifetime coin total and cash in box, in cents."""
     r = cdr_header(88, phone, when, **kw)
     r[56:64] = status
@@ -99,19 +108,27 @@ def commerr(phone: str, when: dt.datetime, code: int, **kw) -> bytes:
     return bytes(r)
 
 
-def callacct(phone: str, when: dt.datetime, start: dt.date, end: dt.date, counters: list[int],
-             group: str = "000100", site: str = "100") -> bytes:
+def callacct(
+    phone: str,
+    when: dt.datetime,
+    start: dt.date,
+    end: dt.date,
+    counters: list[int],
+    group: str = "000100",
+    site: str = "100",
+) -> bytes:
     """CDR/CALLACCT.DAT record. The counter layout from offset 46 is invented (it is still ❓)."""
     r = cdr_header(552, phone, when, group=group, site=site)
     put(r, 32, start.strftime("%y%m%d"), 7)
     put(r, 39, end.strftime("%y%m%d"), 7)
-    for k, n in enumerate(counters[:(552 - 48) // 2]):
+    for k, n in enumerate(counters[: (552 - 48) // 2]):
         struct.pack_into("<H", r, 48 + 2 * k, n)
     return bytes(r)
 
 
-def audit(phone: str, when: dt.datetime, calls, group: str = "000100", site: str = "100",
-          extra: bytes = b"") -> bytes:
+def audit(
+    phone: str, when: dt.datetime, calls, group: str = "000100", site: str = "100", extra: bytes = b""
+) -> bytes:
     """CDR/AUDITCDR.DAT record: one poll's batch of calls.
 
     `calls` holds (dialed, datetime) or (dialed, datetime, detail16). The 16 detail
@@ -136,10 +153,23 @@ def audit(phone: str, when: dt.datetime, calls, group: str = "000100", site: str
     return bytes(r + extra)
 
 
-def site(phone: str, desc: str, group: str = "000100", city: str = "SPRINGFIELD", state: str = "CA",
-         firmware: str = "DD7019-0023R", *, site_no: str = "100", rate: str = "CALIFORNIA",
-         options: str = "CALIFORNIA", installed: str = "08/12/09", location: str | None = None,
-         address: str = "1 MAIN ST", zip_code: str = "99999-    ", firmware_target: str | None = None) -> bytes:
+def site(
+    phone: str,
+    desc: str,
+    group: str = "000100",
+    city: str = "SPRINGFIELD",
+    state: str = "CA",
+    firmware: str = "DD7019-0023R",
+    *,
+    site_no: str = "100",
+    rate: str = "CALIFORNIA",
+    options: str = "CALIFORNIA",
+    installed: str = "08/12/09",
+    location: str | None = None,
+    address: str = "1 MAIN ST",
+    zip_code: str = "99999-    ",
+    firmware_target: str | None = None,
+) -> bytes:
     """SITES/SITES.DAT record (2456 bytes)."""
     r = bytearray(2456)
     put(r, 1, phone, 11)
@@ -176,7 +206,7 @@ def user(name: str, password: str, desc: str = "TEST USER", salt: int = 0x0E) ->
     put(r, 14, desc, 41)
     r[KEY_SALT_OFFSET] = salt
     enc = encode_password(password, password_key(r))
-    r[PW_OFFSET:PW_OFFSET + 8] = enc.ljust(8, b"\0")
+    r[PW_OFFSET : PW_OFFSET + 8] = enc.ljust(8, b"\0")
     return bytes(r)
 
 
@@ -197,7 +227,7 @@ def port(no: int, modem_rec: bytes, line: str) -> bytes:
     """LOCAL/PORTS.DAT record (313 bytes): a copy of a modem profile plus the port's line."""
     r = bytearray(313)
     r[1] = no
-    r[3:3 + 229] = modem_rec[1:230]      # the port keeps its own copy of the modem strings
+    r[3 : 3 + 229] = modem_rec[1:230]  # the port keeps its own copy of the modem strings
     put(r, 232, line, 14)
     return bytes(r)
 
@@ -228,24 +258,46 @@ def named(reclen: int, name: str) -> bytes:
 UPMS_INIT = "ATM1L0E0Q0V1X3S10=255S0=0S9=2S7=100&D2"
 
 PLACES = [  # (city, state, area code, zip) -- invented; 555-01xx numbers are reserved for fiction
-    ("LAKEVIEW", "CA", "714", "92800"), ("MILLBROOK", "CA", "949", "92600"),
-    ("CEDAR FLATS", "TX", "210", "78200"), ("HARLOW", "TX", "512", "78700"),
-    ("DRY CREEK", "NV", "702", "89100"), ("NORTH FORK", "NV", "775", "89500"),
+    ("LAKEVIEW", "CA", "714", "92800"),
+    ("MILLBROOK", "CA", "949", "92600"),
+    ("CEDAR FLATS", "TX", "210", "78200"),
+    ("HARLOW", "TX", "512", "78700"),
+    ("DRY CREEK", "NV", "702", "89100"),
+    ("NORTH FORK", "NV", "775", "89500"),
 ]
 GROUPS = ["000100", "000200", "000300", "000400"]
 SPOTS = [
-    "BUS DEPOT NORTH", "LAUNDROMAT", "COUNTY COURT LOBBY", "HOSPITAL ER WAITING", "TRUCK STOP DIESEL ISLE",
-    "PUBLIC LIBRARY", "GAS STATION PUMP 4", "MOTEL OFFICE", "CITY PARK RESTROOMS", "AIRPORT BAGGAGE CLAIM",
-    "GROCERY FRONT ENTRANCE", "BOWLING ALLEY", "CORNER DINER", "COLLEGE DORM LOBBY", "FERRY LANDING",
-    "JAIL VISITOR ROOM", "MARINA FUEL DOCK", "REST AREA EASTBOUND", "TRAIN STATION PLATFORM 2",
-    "STADIUM GATE C", "SENIOR CENTER", "FLEA MARKET", "CAR WASH", "LIQUOR STORE",
+    "BUS DEPOT NORTH",
+    "LAUNDROMAT",
+    "COUNTY COURT LOBBY",
+    "HOSPITAL ER WAITING",
+    "TRUCK STOP DIESEL ISLE",
+    "PUBLIC LIBRARY",
+    "GAS STATION PUMP 4",
+    "MOTEL OFFICE",
+    "CITY PARK RESTROOMS",
+    "AIRPORT BAGGAGE CLAIM",
+    "GROCERY FRONT ENTRANCE",
+    "BOWLING ALLEY",
+    "CORNER DINER",
+    "COLLEGE DORM LOBBY",
+    "FERRY LANDING",
+    "JAIL VISITOR ROOM",
+    "MARINA FUEL DOCK",
+    "REST AREA EASTBOUND",
+    "TRAIN STATION PLATFORM 2",
+    "STADIUM GATE C",
+    "SENIOR CENTER",
+    "FLEA MARKET",
+    "CAR WASH",
+    "LIQUOR STORE",
 ]
 STREETS = ["ELM ST", "HARBOR BLVD", "MAIN ST", "RIVER RD", "OAK AVE", "STATION WAY", "MARKET ST", "PINE DR"]
 
 # comm error codes, see xnet.COMM_ERRORS
-DEAD_CODES = [4, 4, 4, 5, 5, 6]                  # carrier time-out, BUSY, no carrier
-FLAKY_CODES = [5, 8, 10, 4, 13, 37, 48, 39]      # occasional failures of a working phone
-NEW_SITE_CODES = [14, 11, 13]                    # security code / phone number problems
+DEAD_CODES = [4, 4, 4, 5, 5, 6]  # carrier time-out, BUSY, no carrier
+FLAKY_CODES = [5, 8, 10, 4, 13, 37, 48, 39]  # occasional failures of a working phone
+NEW_SITE_CODES = [14, 11, 13]  # security code / phone number problems
 
 KINDS = ("ok", "outage", "amber", "red", "red_unpolled", "never")
 
@@ -263,8 +315,8 @@ class _Site:
     kind: str
     calls_per_day: float
     removed_at: dt.datetime | None = None
-    dead_from: dt.datetime | None = None          # no calls, no answer from this night on
-    unpolled_from: dt.datetime | None = None      # taken off the poll list
+    dead_from: dt.datetime | None = None  # no calls, no answer from this night on
+    unpolled_from: dt.datetime | None = None  # taken off the poll list
     outage: tuple[dt.datetime, dt.datetime] | None = None
     first_night: dt.datetime | None = None
     status: bytes = b""
@@ -311,8 +363,9 @@ def _dialed(rng: random.Random, area: str) -> tuple[str, int, int]:
     return rng.choice(["911", "411", "0", "5551212"]), 4, rng.choice([0, 0, 50])
 
 
-def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
-              end: dt.datetime = DEMO_END) -> Path:
+def make_demo(
+    root: str | Path, sites: int = 20, days: int = 400, seed: int = 1, end: dt.datetime = DEMO_END
+) -> Path:
     """Write a synthetic ExpressNet folder to root/XNET and return its path.
 
     The route has `sites` payphones in four groups. Most answer every night;
@@ -338,9 +391,18 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
     roster: list[_Site] = []
     for i, kind in enumerate(kinds):
         city, state, npa, zip_code = PLACES[i % len(PLACES)]
-        s = _Site(i=i, phone=f"{npa}555{100 + i:04d}", desc=spots[i % len(spots)],
-                  group=GROUPS[(i * 7) % len(GROUPS)], site_no=str(110 + 10 * i), city=city, state=state,
-                  zip=zip_code, kind=kind, calls_per_day=rng.choice([0.4, 0.7, 1.0, 1.5, 2.2, 3.0]))
+        s = _Site(
+            i=i,
+            phone=f"{npa}555{100 + i:04d}",
+            desc=spots[i % len(spots)],
+            group=GROUPS[(i * 7) % len(GROUPS)],
+            site_no=str(110 + 10 * i),
+            city=city,
+            state=state,
+            zip=zip_code,
+            kind=kind,
+            calls_per_day=rng.choice([0.4, 0.7, 1.0, 1.5, 2.2, 3.0]),
+        )
         s.status = bytes([0, 1, 0, rng.choice([0x40, 0x60, 0x68]), 0, rng.choice([0, 2]), 0, 0])
         s.total = rng.randint(400, 9000) * 100
         s.box = rng.randint(0, 4000)
@@ -368,7 +430,7 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
         roster.append(s)
 
     busy = next((s for s in roster if s.kind == "ok"), roster[0])
-    busy.calls_per_day = 5.5                          # one busy phone, so call lists run to several pages
+    busy.calls_per_day = 5.5  # one busy phone, so call lists run to several pages
 
     coins, errs, auds, cas = [], [], [], []
 
@@ -385,7 +447,8 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
             if night < s.first_night or (s.removed_at and night >= s.removed_at):
                 continue
             dead = (s.dead_from is not None and night >= s.dead_from) or (
-                s.outage is not None and s.outage[0] <= night < s.outage[1])
+                s.outage is not None and s.outage[0] <= night < s.outage[1]
+            )
             # yesterday's calls (a dead phone takes none)
             if not dead:
                 for _ in range(_poisson(rng, s.calls_per_day)):
@@ -400,10 +463,10 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
                 s.pending.sort(key=lambda c: c[1])
             # the collector empties the box (between polls)
             if night >= s.next_collect and not dead:
-                s.box = rng.randint(0, 150)          # coins that came in after the box was emptied
+                s.box = rng.randint(0, 150)  # coins that came in after the box was emptied
                 s.next_collect = night + dt.timedelta(days=s.collect_every + rng.randint(-5, 5))
             elif s.box > 9000 and not dead:
-                s.box = 0                            # "cash volume full" -- emptied early
+                s.box = 0  # "cash volume full" -- emptied early
             if s.unpolled_from and night >= s.unpolled_from:
                 continue
             t = night.replace(hour=1, minute=0) + dt.timedelta(minutes=2 * k + rng.randint(0, 1))
@@ -417,11 +480,11 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
                     errs.append(commerr(s.phone, t, rng.choice(DEAD_CODES), **kw))
                     t += dt.timedelta(minutes=rng.randint(4, 12))
                 continue
-            if rng.random() < 0.05:                  # a bad night for a working phone
+            if rng.random() < 0.05:  # a bad night for a working phone
                 errs.append(commerr(s.phone, t, rng.choice(FLAKY_CODES), **kw))
                 if rng.random() < 0.5:
-                    continue                         # try again tomorrow
-                t = night.replace(hour=rng.choice([8, 9]), minute=rng.randint(0, 59))   # manual re-poll
+                    continue  # try again tomorrow
+                t = night.replace(hour=rng.choice([8, 9]), minute=rng.randint(0, 59))  # manual re-poll
             coins.append((t, coin(s.phone, t, s.total, s.box, status=s.status, **kw)))
             collect_audit(s, t)
             if night >= s.ca_next:
@@ -437,13 +500,27 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
 
     def site_rec(s: _Site) -> bytes:
         years = rng.randint(1, 14)
-        installed = (end - dt.timedelta(days=365 * years + rng.randint(0, 300))) if s.kind != "never" \
+        installed = (
+            (end - dt.timedelta(days=365 * years + rng.randint(0, 300)))
+            if s.kind != "never"
             else s.first_night - dt.timedelta(days=2)
+        )
         fw = "DD7019-0023R" if s.i % 5 else "DD7019-0021R"
-        return site(s.phone, s.desc, group=s.group, city=s.city, state=s.state, firmware=fw,
-                    firmware_target="DD7019-0023R", site_no=s.site_no, rate=rate_names[s.state],
-                    options="NIGHT-POLL" if s.i % 3 else "STANDARD", installed=installed.strftime("%m/%d/%y"),
-                    address=f"{100 + 37 * s.i} {STREETS[s.i % len(STREETS)]}", zip_code=f"{s.zip[:3]}{s.i:02d}-    ")
+        return site(
+            s.phone,
+            s.desc,
+            group=s.group,
+            city=s.city,
+            state=s.state,
+            firmware=fw,
+            firmware_target="DD7019-0023R",
+            site_no=s.site_no,
+            rate=rate_names[s.state],
+            options="NIGHT-POLL" if s.i % 3 else "STANDARD",
+            installed=installed.strftime("%m/%d/%y"),
+            address=f"{100 + 37 * s.i} {STREETS[s.i % len(STREETS)]}",
+            zip_code=f"{s.zip[:3]}{s.i:02d}-    ",
+        )
 
     site_recs = [site_rec(s) for s in live]
     # deleted site records sit between live ones, as c-tree reuses and frees slots
@@ -470,23 +547,44 @@ def make_demo(root: str | Path, sites: int = 20, days: int = 400, seed: int = 1,
     (x / "CDR/AUDITCDR.DAT").write_bytes(var_file(audit_recs, garbage_after=damage_at, garbage=junk))
 
     (x / "SYSTEM/X3SYSPAR.DAT").write_bytes(fixed_file(211, [syspar("Demo Payphone Co.", "0000012345")]))
-    (x / "SYSTEM/PASSWORD.DAT").write_bytes(fixed_file(83, [
-        user("PROTEL", "PROTELX3", "FACTORY LOGIN", salt=0x5A),
-        user("OFFICE", "COINS42", "OFFICE MANAGER", salt=0x21),
-        user("TECH", "FIXIT", "FIELD TECHNICIAN", salt=0x77),
-    ]))
-    upms = modem("UPMS1200", "Protel UPMS1200 1200 bps PSK modem", UPMS_INIT, "ATA",
-                 ("ATDT", "ATDT", "ATDT"), "ATZ")
-    generic = modem("GENERIC", "Hayes compatible modem at 300 bps", UPMS_INIT.replace("L0", "L2")[:-3], "ATA",
-                    ("ATDT", "ATDT", "ATDT"), "ATZ")
+    (x / "SYSTEM/PASSWORD.DAT").write_bytes(
+        fixed_file(
+            83,
+            [
+                user("PROTEL", "PROTELX3", "FACTORY LOGIN", salt=0x5A),
+                user("OFFICE", "COINS42", "OFFICE MANAGER", salt=0x21),
+                user("TECH", "FIXIT", "FIELD TECHNICIAN", salt=0x77),
+            ],
+        )
+    )
+    upms = modem(
+        "UPMS1200", "Protel UPMS1200 1200 bps PSK modem", UPMS_INIT, "ATA", ("ATDT", "ATDT", "ATDT"), "ATZ"
+    )
+    generic = modem(
+        "GENERIC",
+        "Hayes compatible modem at 300 bps",
+        UPMS_INIT.replace("L0", "L2")[:-3],
+        "ATA",
+        ("ATDT", "ATDT", "ATDT"),
+        "ATZ",
+    )
     (x / "PARAM/MODEMS.DAT").write_bytes(fixed_file(230, [upms, generic]))
-    (x / "LOCAL/PORTS.DAT").write_bytes(fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101")]))
+    (x / "LOCAL/PORTS.DAT").write_bytes(
+        fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101")])
+    )
     (x / "LOCAL/GROUPS.DAT").write_bytes(fixed_file(22, [group(g) for g in GROUPS]))
-    (x / "LOCAL/POLLIST.DAT").write_bytes(fixed_file(231, [
-        poll_list("NIGHTLY", "Every phone, every night", "01:00"),
-        poll_list("MORNING", "Re-poll phones that failed overnight", "08:00"),
-        poll_list("INCOMING", "Window for phones that call in", "03:00"),
-    ]))
+    (x / "LOCAL/POLLIST.DAT").write_bytes(
+        fixed_file(
+            231,
+            [
+                poll_list("NIGHTLY", "Every phone, every night", "01:00"),
+                poll_list("MORNING", "Re-poll phones that failed overnight", "08:00"),
+                poll_list("INCOMING", "Window for phones that call in", "03:00"),
+            ],
+        )
+    )
     (x / "PARAM/CALLCOST.DAT").write_bytes(fixed_file(36781, [named(36781, n) for n in rate_names.values()]))
-    (x / "PARAM/MISCOPT.DAT").write_bytes(fixed_file(420, [named(420, n) for n in ("STANDARD", "NIGHT-POLL")]))
+    (x / "PARAM/MISCOPT.DAT").write_bytes(
+        fixed_file(420, [named(420, n) for n in ("STANDARD", "NIGHT-POLL")])
+    )
     return x

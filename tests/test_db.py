@@ -1,4 +1,5 @@
 """coinroute.db: the read-only query layer shared by the CLI and the GUI."""
+
 import datetime as dt
 import sqlite3
 import struct
@@ -43,7 +44,7 @@ def test_site_summary_and_removed_sites(demo_db):
         both = db.site_summary(30, include_removed=True)["sites"]
         removed = [r for r in both if r["removed"]]
         assert len(removed) == len(db.removed_phones()) >= 2
-        assert all(r["last_ok"] for r in removed)              # they answered once
+        assert all(r["last_ok"] for r in removed)  # they answered once
         # a longer window can only see more coins and failures
         wide = {r["phone"]: r for r in db.site_summary(365)["sites"]}
         for r in s["sites"]:
@@ -86,16 +87,18 @@ def _all_pages(fetch, limit):
 
 def test_calls_paging_covers_every_call_once(demo_db):
     with RouteDB(demo_db) as db:
-        phone = db.con.execute("SELECT phone FROM audit_calls GROUP BY phone ORDER BY count(*) DESC").fetchone()[0]
+        phone = db.con.execute(
+            "SELECT phone FROM audit_calls GROUP BY phone ORDER BY count(*) DESC"
+        ).fetchone()[0]
         total = db.calls_count(phone)
         assert total > 1000
         rows = _all_pages(lambda **k: db.calls_page(phone, **k), 97)
         assert len(rows) == total and len({r["id"] for r in rows}) == total
         dates = [r["call_date"] for r in rows]
-        assert dates == sorted(dates, reverse=True)                   # newest first
+        assert dates == sorted(dates, reverse=True)  # newest first
         assert len(rows[0]["detail_hex"].split()) == 16
         first, last = db.call_date_range(phone)
-        mid = (dt.date.fromisoformat(first) + (dt.date.fromisoformat(last) - dt.date.fromisoformat(first)) / 2)
+        mid = dt.date.fromisoformat(first) + (dt.date.fromisoformat(last) - dt.date.fromisoformat(first)) / 2
         lo, hi = mid.isoformat(), (mid + dt.timedelta(days=30)).isoformat()
         part = _all_pages(lambda **k: db.calls_page(phone, lo, hi, **k), 50)
         assert len(part) == db.calls_count(phone, lo, hi) > 0
@@ -108,10 +111,10 @@ def test_paging_puts_undated_rows_last(tmp_path):
     t = dt.datetime(2026, 5, 1, 1, 0)
     rec = bytearray(fx.audit("7145550101", t, [("5550101", t), ("5550102", t), ("5550103", t)]))
     for k in range(3):
-        rec[42 + 47 * k + 17:42 + 47 * k + 26] = b"????????\0"
+        rec[42 + 47 * k + 17 : 42 + 47 * k + 26] = b"????????\0"
     data = (x / "CDR/AUDITCDR.DAT").read_bytes()
     block = b"\xfa\xfa" + struct.pack("<II", len(rec) + 10, len(rec)) + bytes(rec)
-    (x / "CDR/AUDITCDR.DAT").write_bytes(data[:-30] + block + data[-30:])     # before the trailing free block
+    (x / "CDR/AUDITCDR.DAT").write_bytes(data[:-30] + block + data[-30:])  # before the trailing free block
     import_xnet(x, tmp_path / "r.db")
     with RouteDB(tmp_path / "r.db") as db:
         assert db.calls_count("7145550101") == 6
@@ -125,8 +128,11 @@ def test_paging_puts_undated_rows_last(tmp_path):
 
 def test_comm_errors(demo_db):
     with RouteDB(demo_db) as db:
-        dead = next(r for r in db.site_summary()["sites"] if r["status_kind"] == "dead"
-                    and r["failed_calls_in_window"])["phone_digits"]
+        dead = next(
+            r
+            for r in db.site_summary()["sites"]
+            if r["status_kind"] == "dead" and r["failed_calls_in_window"]
+        )["phone_digits"]
         n = db.comm_error_count(dead)
         rows = _all_pages(lambda **k: db.comm_errors_page(dead, **k), 25)
         assert len(rows) == n and [r["at"] for r in rows] == sorted((r["at"] for r in rows), reverse=True)
@@ -140,14 +146,20 @@ def test_call_accounting_and_settings(demo_db):
         phone = db.site_summary()["sites"][0]["phone_digits"]
         ca = db.call_accounting(phone)
         assert ca and ca[0]["period_start"] <= ca[0]["period_end"] and ca[0]["counters_hex"]
-        assert db.system() == {"install_date": "2000-04-20", "company": "Demo Payphone Co.",
-                               "license_no": "0000012345"}
+        assert db.system() == {
+            "install_date": "2000-04-20",
+            "company": "Demo Payphone Co.",
+            "license_no": "0000012345",
+        }
         assert [u["user"] for u in db.users()] == ["PROTEL", "OFFICE", "TECH"]
         assert db.users()[0]["password"] == "PROTELX3"
         assert db.ports()[0]["modem_name"] == "UPMS1200" and db.ports()[0]["line_number"] == "555-0100"
         assert {m["name"] for m in db.modems()} == {"UPMS1200", "GENERIC"}
-        assert db.poll_lists()[0] == {"name": "NIGHTLY", "description": "Every phone, every night",
-                                      "start_time": "01:00"}
+        assert db.poll_lists()[0] == {
+            "name": "NIGHTLY",
+            "description": "Every phone, every night",
+            "start_time": "01:00",
+        }
         groups = db.group_table()
         assert sum(g["sites"] for g in groups) == 20 and all(g["defined"] for g in groups)
         assert sum(r["sites"] for r in db.rate_records()) == 20

@@ -1,4 +1,5 @@
 """The synthetic demo installation (coinroute.demo / `coinroute demo`)."""
+
 import sqlite3
 
 import pytest
@@ -23,7 +24,7 @@ def test_demo_imports_with_the_expected_damage(demo_import):
     assert rep.missing == []
     assert rep.counts["SITES/SITES.DAT"] == 20
     assert rep.counts["CDR/COIN.DAT"] > 5000
-    assert rep.counts["audit calls"] > 20 * 200                    # a few hundred calls per phone
+    assert rep.counts["audit calls"] > 20 * 200  # a few hundred calls per phone
     assert any("skipped 4,096 unreadable bytes" in w for w in rep.warnings)
     assert any("size doesn't match" in w for w in rep.warnings)
 
@@ -41,18 +42,28 @@ def test_demo_route_has_every_kind_of_phone(demo_db):
 
     con = sqlite3.connect(db)
     # deleted site records: their phones still have history
-    removed = con.execute("SELECT count(DISTINCT phone) FROM coin_polls "
-                          "WHERE phone NOT IN (SELECT phone FROM sites)").fetchone()[0]
+    removed = con.execute(
+        "SELECT count(DISTINCT phone) FROM coin_polls WHERE phone NOT IN (SELECT phone FROM sites)"
+    ).fetchone()[0]
     assert removed >= 2
     # cash boxes get emptied
-    drops = con.execute("SELECT count(*) FROM (SELECT cash_box_cents b, lag(cash_box_cents) OVER "
-                        "(PARTITION BY phone ORDER BY at) p FROM coin_polls) WHERE b < p").fetchone()[0]
+    drops = con.execute(
+        "SELECT count(*) FROM (SELECT cash_box_cents b, lag(cash_box_cents) OVER "
+        "(PARTITION BY phone ORDER BY at) p FROM coin_polls) WHERE b < p"
+    ).fetchone()[0]
     assert drops > 20
     # lifetime totals never go down
-    assert con.execute("SELECT count(*) FROM (SELECT coin_total_cents t, lag(coin_total_cents) OVER "
-                       "(PARTITION BY phone ORDER BY at) p FROM coin_polls) WHERE t < p").fetchone()[0] == 0
-    busiest = con.execute("SELECT max(n) FROM (SELECT count(*) n FROM audit_calls GROUP BY phone)").fetchone()[0]
-    assert busiest > 1000                                          # enough for several pages
+    assert (
+        con.execute(
+            "SELECT count(*) FROM (SELECT coin_total_cents t, lag(coin_total_cents) OVER "
+            "(PARTITION BY phone ORDER BY at) p FROM coin_polls) WHERE t < p"
+        ).fetchone()[0]
+        == 0
+    )
+    busiest = con.execute(
+        "SELECT max(n) FROM (SELECT count(*) n FROM audit_calls GROUP BY phone)"
+    ).fetchone()[0]
+    assert busiest > 1000  # enough for several pages
     con.close()
 
 
