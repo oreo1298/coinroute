@@ -373,8 +373,11 @@ class CallsTab(QWidget):
             d.setCalendarPopup(True)
             d.setDisplayFormat("yyyy-MM-dd")
             d.setEnabled(False)
-        lo = QDate.fromString(first, "yyyy-MM-dd") if first else QDate.currentDate()
-        hi = QDate.fromString(last, "yyyy-MM-dd") if last else QDate.currentDate()
+        today = QDate.currentDate()
+        lo = QDate.fromString(first or "", "yyyy-MM-dd")
+        hi = QDate.fromString(last or "", "yyyy-MM-dd")
+        lo = lo if lo.isValid() else today           # damaged call dates can be unparseable
+        hi = hi if hi.isValid() else today
         self.date_from.setDate(hi.addDays(-30) if hi.addDays(-30) > lo else lo)
         self.date_to.setDate(hi)
         self.count_label = QLabel()

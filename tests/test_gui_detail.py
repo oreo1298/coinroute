@@ -110,3 +110,14 @@ def test_long_history_opens_on_two_years(qtbot):
     t2 = CoinPollsTab([poll("2025-06-01 01:00", 100), poll("2026-01-01 01:00", 900)])
     qtbot.addWidget(t2)
     assert t2.chart.days is None and t2.range_buttons.checkedId() == 0
+
+
+def test_calls_tab_survives_unparseable_dates(qtbot, db, monkeypatch):
+    from coinroute.gui.detail import CallsTab
+
+    phone = busiest(db)
+    monkeypatch.setattr(db, "call_date_range", lambda p: ("0000-00-00", "2026-13-45"))
+    t = CallsTab(db, phone)
+    qtbot.addWidget(t)
+    assert t.date_from.date().isValid() and t.date_to.date().isValid()
+    assert t.model.rowCount() == 200
