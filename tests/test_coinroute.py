@@ -188,3 +188,24 @@ def test_real_folder_invariants():
         if c["at"] != f"{c['date_text']} {c['time_text']}":
             mismatched += 1
     assert n > 0 and mismatched == 0, f"{mismatched}/{n} coin timestamps disagree with their text dates"
+
+
+def test_import_progress_reports_each_file_and_can_cancel(tmp_path):
+    from coinroute.importer import INDEX_STEP, SOURCE_FILES
+    fx.build(tmp_path)
+    seen = []
+    import_xnet(tmp_path / "XNET", tmp_path / "a.db", progress=lambda s, n: seen.append((s, n)),
+                progress_every=10)
+    starts = [s for s, n in seen if n == 0]
+    assert starts == SOURCE_FILES + [INDEX_STEP]
+    assert ("CDR/COIN.DAT", 40) in seen
+
+    class Stop(Exception):
+        pass
+
+    def stop_at_coins(step, n):
+        if step == "CDR/COIN.DAT":
+            raise Stop
+    with pytest.raises(Stop):
+        import_xnet(tmp_path / "XNET", tmp_path / "b.db", progress=stop_at_coins)
+    assert not (tmp_path / "b.db").exists()                 # partial database removed

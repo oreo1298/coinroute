@@ -17,6 +17,9 @@ modem = ["pyserial>=3.5"]
 [project.scripts]
 coinroute = "coinroute.cli:main"
 
+[project.gui-scripts]
+coinroute-gui = "coinroute.gui.app:main"
+
 [tool.setuptools.dynamic]
 version = { attr = "coinroute.__version__" }
 

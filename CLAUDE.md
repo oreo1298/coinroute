@@ -13,8 +13,8 @@ operator moving off a Windows 98 PC; their ExpressNet folder is **not** in this
 repo and must never be.
 
 Decisions already made: **Python 3.11+**, **Qt desktop app (PySide6)**, polling
-will later run as a background service. Milestone 1 (importer) is done; work
-continues per [docs/ROADMAP.md](docs/ROADMAP.md).
+will later run as a background service. Milestones 1 (importer) and 2 (desktop
+app) are done; work continues per [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Hard rules
 
@@ -33,8 +33,9 @@ continues per [docs/ROADMAP.md](docs/ROADMAP.md).
    later decoding needs no re-import.
 5. When a field layout is learned or its confidence changes, update
    `FORMATS.md` (✅ verified · 🟡 probable · ❓ unknown) in the same commit.
-6. The core (`ctree`, `fields`, `scramble`, `xnet`, `importer`, `report`, `cli`)
-   stays **standard-library only** and must not import Qt. GUI code lives in
+6. The core (`ctree`, `fields`, `scramble`, `xnet`, `importer`, `report`, `cli`,
+   `db`, `demo`) stays **standard-library only** and must not import Qt
+   (`tests/test_core_without_qt.py` checks). GUI code lives in
    `src/coinroute/gui/`.
 
 ## Layout
@@ -46,10 +47,16 @@ src/coinroute/
   scramble.py   X3SYSPAR XOR, password encode/decode/check (with the original's quirks)
   xnet.py       record decoders for each ExpressNet file + COMM_ERRORS table
   importer.py   XNET folder -> new SQLite db (schema at top of file)
-  report.py     route health summary
-  cli.py        coinroute import | summary | export-csv | users
-tests/          fakexnet.py builds synthetic XNET folders; test_*.py
+  db.py         RouteDB: every read query (summary, per-site history, keyset paging, settings, CSV)
+  report.py     text form of the route summary for the CLI
+  demo.py       synthetic XNET folder (make_demo) + the record builders tests use
+  cli.py        coinroute import | summary | export-csv | users | demo | gui
+  gui/          PySide6 app: mainwindow, sitesview, detail (+ chart), settingsview,
+                importdlg, workers (QThread jobs), models (row + paged table models), style
+tests/          fakexnet.py (tiny fixed folder), conftest.py (demo route fixtures); test_*.py,
+                test_gui_*.py need pytest-qt
 tools/fake_upms.py   stand-in UPMS1200 modem (serial or pty) for bench tests
+tools/screenshots.py renders every GUI screen from the demo route to PNG
 tools/re/ne.py       NE-executable helper for studying XNET.EXE (never commit the EXE)
 FORMATS.md           every known file layout, with confidence marks
 docs/ROADMAP.md      milestones; Milestone 2 spec + acceptance list
@@ -64,7 +71,12 @@ pytest -q                                      # all tests, synthetic data only
 QT_QPA_PLATFORM=offscreen pytest -q            # GUI tests in a headless session
 COINROUTE_REAL_XNET=/path/to/XNET pytest -q    # extra checks; only where real data exists
 PYTHONPATH=src python -m coinroute --help
+coinroute demo /tmp/d && coinroute import /tmp/d/XNET /tmp/d.db && coinroute gui /tmp/d.db
 ```
+
+If Qt fails to load in a fresh container (`libEGL.so.1: cannot open shared
+object file`), install the runtime libraries:
+`apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3`.
 
 ### Looking at the GUI without a screen
 
@@ -72,6 +84,8 @@ Sessions here are headless. Run Qt with `QT_QPA_PLATFORM=offscreen`, render a
 window with `widget.grab().save("/tmp/shot.png")`, and open the PNG to check
 layout, clipping and colours. Do this for every new screen before calling it
 done; Andrew will also run it on his CachyOS desktop and report back.
+`QT_QPA_PLATFORM=offscreen python tools/screenshots.py OUTDIR [--dark]` renders
+them all from the demo route; add new screens to it.
 
 ## Conventions
 

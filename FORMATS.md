@@ -54,7 +54,10 @@ Text dates appear as `yymmdd` (CDR files), `yyyymmdd` (audit CDRs) and
 | 64 | u32 | lifetime coin total, cents | ✅ matches printed Coin Report |
 | 68 | u32 | cash currently in box, cents | ✅ matches "In Box" column |
 
-## CDR/COMMERR.DAT — 130 bytes, one per communication result
+## CDR/COMMERR.DAT — 130 bytes, one per failed call to a phone
+
+Only failures are logged: a real installation (~290k records) has no code-0
+("No error") rows; successful polls show up in COIN.DAT instead. ✅
 
 | Off | Size | Field | |
 |---|---|---|---|
