@@ -89,3 +89,24 @@ def test_chart_hover_snaps_to_nearest_poll(qtbot, db):
     i0, i1 = ch.visible()
     assert i1 == len(polls) and 80 <= i1 - i0 <= 92
     assert ch.poll_at(left) == i0
+
+
+def test_long_history_opens_on_two_years(qtbot):
+    from coinroute.gui.detail import CoinPollsTab
+
+    def poll(at, total):
+        return {
+            "at": at,
+            "coin_total_cents": total,
+            "cash_box_cents": 0,
+            "coins_cents": None,
+            "collected_cents": None,
+            "status_bytes": "",
+        }
+
+    t = CoinPollsTab([poll("2015-01-01 01:00", 100), poll("2026-01-01 01:00", 900)])
+    qtbot.addWidget(t)
+    assert t.chart.days == 730 and t.range_buttons.checkedId() == 1
+    t2 = CoinPollsTab([poll("2025-06-01 01:00", 100), poll("2026-01-01 01:00", 900)])
+    qtbot.addWidget(t2)
+    assert t2.chart.days is None and t2.range_buttons.checkedId() == 0

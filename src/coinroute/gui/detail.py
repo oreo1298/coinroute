@@ -256,7 +256,15 @@ class CoinPollsTab(QWidget):
             b.clicked.connect(lambda _=False, d=days: self.chart.set_days(d))
             self.range_buttons.addButton(b, i)
             bar.addWidget(b)
-        self.range_buttons.button(0).setChecked(True)
+        # long histories (real routes go back decades) open on the last two years
+        span_days = 0
+        if len(polls) > 1:
+            first = _dt.datetime.strptime(polls[0]["at"], "%Y-%m-%d %H:%M")
+            last = _dt.datetime.strptime(polls[-1]["at"], "%Y-%m-%d %H:%M")
+            span_days = (last - first).days
+        start = 1 if span_days > 730 else 0
+        self.range_buttons.button(start).setChecked(True)
+        self.chart.set_days(self.RANGES[start][1])
         bar.addStretch(1)
         drops = [p for p in polls if p["collected_cents"] is not None]
         self.summary = note(
