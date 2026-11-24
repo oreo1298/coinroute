@@ -56,6 +56,15 @@ def cmd_demo(a):
     print(f"Next: coinroute import {x} demo.db")
 
 
+def cmd_gui(a):
+    try:
+        from .gui.app import run
+    except ImportError as e:
+        sys.exit(f"coinroute: the desktop app needs PySide6 ({e}).\n"
+                 "Install it with:  pip install 'coinroute[gui]'")
+    sys.exit(run(a.db))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="coinroute", description="Payphone route manager (ExpressNet replacement).")
     ap.add_argument("--version", action="version", version=f"coinroute {__version__}")
@@ -79,6 +88,10 @@ def main(argv=None):
     p.add_argument("outdir")
     p.add_argument("--calls", action="store_true", help="include individual call records (large)")
     p.set_defaults(func=cmd_export_csv)
+
+    p = sub.add_parser("gui", help="start the desktop app")
+    p.add_argument("db", nargs="?", help="route database to open")
+    p.set_defaults(func=cmd_gui)
 
     p = sub.add_parser("demo", help="write a synthetic ExpressNet folder (made-up route) to OUTDIR/XNET")
     p.add_argument("outdir")
