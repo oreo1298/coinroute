@@ -5,17 +5,7 @@ import pytest
 
 from coinroute.cli import main
 from coinroute.demo import make_demo
-from coinroute.importer import import_xnet
 from coinroute.report import route_summary
-
-
-@pytest.fixture(scope="module")
-def demo_db(tmp_path_factory):
-    root = tmp_path_factory.mktemp("demo")
-    make_demo(root)
-    db = root / "demo.db"
-    rep = import_xnet(root / "XNET", db)
-    return db, rep
 
 
 def test_demo_is_reproducible(tmp_path):
@@ -28,8 +18,8 @@ def test_demo_is_reproducible(tmp_path):
     assert (c / "CDR/COIN.DAT").read_bytes() != (a / "CDR/COIN.DAT").read_bytes()
 
 
-def test_demo_imports_with_the_expected_damage(demo_db):
-    _, rep = demo_db
+def test_demo_imports_with_the_expected_damage(demo_import):
+    _, rep = demo_import
     assert rep.missing == []
     assert rep.counts["SITES/SITES.DAT"] == 20
     assert rep.counts["CDR/COIN.DAT"] > 5000
@@ -39,7 +29,7 @@ def test_demo_imports_with_the_expected_damage(demo_db):
 
 
 def test_demo_route_has_every_kind_of_phone(demo_db):
-    db, _ = demo_db
+    db = demo_db
     s = route_summary(db)
     statuses = [r["status"] for r in s["sites"]]
     silent = [int(x.split()[1]) for x in statuses if x.startswith("silent")]
@@ -71,5 +61,8 @@ def test_cli_demo_then_import(tmp_path, capsys):
     assert "coinroute import" in capsys.readouterr().out
     main(["import", str(tmp_path / "d/XNET"), str(tmp_path / "d.db")])
     assert route_summary(tmp_path / "d.db")["sites"]
+    capsys.readouterr()
+    main(["summary", str(tmp_path / "d.db"), "--removed"])
+    assert "(site record deleted)" in capsys.readouterr().out
     with pytest.raises(SystemExit, match="already exists"):
         main(["demo", str(tmp_path / "d")])

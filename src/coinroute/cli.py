@@ -2,17 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import sqlite3
 import sys
 from pathlib import Path
 
 from . import __version__
+from .db import NotARouteDatabase, export_csv
 from .importer import find_file, find_xnet_root, import_xnet
 from .report import format_summary, route_summary
-
-CSV_TABLES = ["system", "sites", "groups", "poll_lists", "modems", "ports", "rate_records",
-              "options_records", "coin_polls", "comm_errors", "call_accounting", "audit_polls", "audit_calls"]
 
 
 def cmd_import(a):
@@ -30,25 +26,12 @@ def cmd_import(a):
 
 
 def cmd_summary(a):
-    print(format_summary(route_summary(a.db, a.days)))
+    print(format_summary(route_summary(a.db, a.days, include_removed=a.removed)))
 
 
 def cmd_export_csv(a):
-    out = Path(a.outdir)
-    out.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(a.db)
-    tables = [t for t in CSV_TABLES if a.calls or t != "audit_calls"]
-    for t in tables:
-        cur = con.execute(f"SELECT * FROM {t}")
-        cols = [c[0] for c in cur.description]
-        keep = [i for i, c in enumerate(cols) if c not in ("raw", "raw_header", "detail")]
-        with open(out / f"{t}.csv", "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow([cols[i] for i in keep])
-            for row in cur:
-                w.writerow([row[i] for i in keep])
-        print(f"  {t}.csv")
-    con.close()
+    for path in export_csv(a.db, a.outdir, include_calls=a.calls):
+        print(f"  {path.name}")
 
 
 def cmd_users(a):
@@ -86,6 +69,8 @@ def main(argv=None):
     p = sub.add_parser("summary", help="route health: which phones answer, cash in box, failures")
     p.add_argument("db")
     p.add_argument("--days", type=int, default=30, help="window for coins and failures (default 30)")
+    p.add_argument("--removed", action="store_true",
+                   help="also list phones that once answered but whose site record was deleted")
     p.set_defaults(func=cmd_summary)
 
     p = sub.add_parser("export-csv", help="write every table to CSV files")
@@ -108,7 +93,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         a.func(a)
-    except (FileNotFoundError, FileExistsError) as e:
+    except (FileNotFoundError, FileExistsError, NotARouteDatabase) as e:
         sys.exit(f"coinroute: {e}")
 
 
