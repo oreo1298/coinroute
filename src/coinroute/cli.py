@@ -62,6 +62,16 @@ def cmd_users(a):
         print(f"{u['user']:<14} {u['password']:<10} {u['description']}")
 
 
+def cmd_demo(a):
+    from .demo import make_demo
+    out = Path(a.outdir)
+    if (out / "XNET").exists():
+        sys.exit(f"coinroute: {out / 'XNET'} already exists; choose an empty folder")
+    x = make_demo(out, sites=a.sites, days=a.days, seed=a.seed)
+    print(f"Wrote a synthetic ExpressNet folder to {x}")
+    print(f"Next: coinroute import {x} demo.db")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="coinroute", description="Payphone route manager (ExpressNet replacement).")
     ap.add_argument("--version", action="version", version=f"coinroute {__version__}")
@@ -83,6 +93,13 @@ def main(argv=None):
     p.add_argument("outdir")
     p.add_argument("--calls", action="store_true", help="include individual call records (large)")
     p.set_defaults(func=cmd_export_csv)
+
+    p = sub.add_parser("demo", help="write a synthetic ExpressNet folder (made-up route) to OUTDIR/XNET")
+    p.add_argument("outdir")
+    p.add_argument("--sites", type=int, default=20, help="number of payphones (default 20)")
+    p.add_argument("--days", type=int, default=400, help="days of history (default 400)")
+    p.add_argument("--seed", type=int, default=1, help="random seed; the same seed gives the same files")
+    p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("users", help="show ExpressNet logins and passwords from an XNET folder")
     p.add_argument("xnet")
