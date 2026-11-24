@@ -22,9 +22,11 @@ continues per [docs/ROADMAP.md](docs/ROADMAP.md).
    no CSV exports, and no real phone numbers, site names, addresses, company
    names or passwords from a real installation in code, tests, docs, commit
    messages or PR text. Tests use synthetic data (`tests/fakexnet.py`: 555
-   numbers, made-up places). Real data reaches a session only as a sample zip made
-   by `coinroute sample` (dialed numbers masked, no logins/billing); use it only
-   to check decoding, keep it outside the repo, and report findings in general terms.
+   numbers, made-up places). Real data reaches a session only as a zip made by
+   `coinroute sample` — a masked sample, or the complete set (`--full`, possibly
+   split into parts: `cat xnet_full.zip.0* > /tmp/xnet_full.zip`). Unzip it
+   outside the repo (e.g. /tmp), use it to check decoding, and report findings in
+   general terms.
 2. **No Protel files in git** — not `XNET.EXE`, `RTM.EXE`, `DPMI16BI.OVL`,
    phone firmware (`PARAM/SOFTWARE/*`), manuals or disk images. Don't paste
    disassembly listings of Protel code into the repo; describe formats and

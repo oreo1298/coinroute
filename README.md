@@ -30,6 +30,8 @@ coinroute export-csv route.db out/    # every table as CSV (add --calls for call
 coinroute users /path/to/XNET         # ExpressNet logins and passwords
 coinroute sample /path/to/XNET s.zip  # small (~2 MB) development sample: recent + spread history,
                                       # dialed numbers masked, no logins/billing/program/indexes
+coinroute sample /path/to/XNET f.zip --full   # every record coinroute reads, without indexes,
+                                              # backups or the program (~27 MB vs ~440 MB)
 ```
 
 The XNET folder is only read. Every imported row keeps the original record

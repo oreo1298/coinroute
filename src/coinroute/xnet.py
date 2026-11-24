@@ -130,6 +130,7 @@ def audit_record(r: bytes) -> dict:
         "calls": calls,
         "size_ok": len(r) == AUDIT_HEADER + AUDIT_ENTRY * n,
         "raw_header": r[:AUDIT_HEADER],
+        "raw": r,
     }
 
 

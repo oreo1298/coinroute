@@ -228,7 +228,7 @@ def test_sample_spreads_older_audit_batches(tmp_path):
     recs = [fx.audit("7145550101", end - dt.timedelta(days=d), [("5551212", t)]) for d in range(1000, -1, -1)]
     data = fx.var_file(recs)
     since = fx.datetime_to_minutes(end - dt.timedelta(days=10))
-    out, kept, total = _audit_subset(data, since, True, older=99)
+    out, kept, total, _ = _audit_subset(data, since, True, older=99)
     assert total == 1001 and 11 + 90 <= kept <= 11 + 99      # 11 recent + ~99 spread older
     got = [xnet.audit_record(r)["at"] for r in ctree.records(out)]
     first = (end - dt.timedelta(days=1000)).strftime("%Y-%m-%d %H:%M")
@@ -241,3 +241,35 @@ def test_sample_refuses_existing_destination(tmp_path):
     (tmp_path / "out.zip").write_bytes(b"x")
     with pytest.raises(FileExistsError):
         make_sample(src, tmp_path / "out.zip")
+
+
+def test_import_merges_auditcdr_old_without_duplicates(tmp_path):
+    src = fx.build(tmp_path)
+    end = dt.datetime(2026, 5, 2, 1, 5)
+    t = dt.datetime(2019, 6, 1, 9, 0)
+    same = fx.audit("7145550101", end, [("5550000", dt.datetime(2026, 4, 30, 14, 0))])   # also in .DAT
+    lost = fx.audit("7145550101", dt.datetime(2019, 6, 2, 1, 0), [("5551111", t), ("5552222", t)])
+    (src / "CDR/AUDITCDR.OLD").write_bytes(fx.var_file([same, lost]))
+    rep = import_xnet(tmp_path, tmp_path / "r.db")
+    assert rep.counts["CDR/AUDITCDR.OLD (new)"] == 1
+    assert rep.counts["audit calls"] == 3 + 2
+    con = sqlite3.connect(tmp_path / "r.db")
+    assert con.execute("SELECT source, count(*) FROM audit_polls GROUP BY source ORDER BY source").fetchall() == \
+        [("AUDITCDR.DAT", 2), ("AUDITCDR.OLD", 1)]
+    con.close()
+
+
+def test_full_sample_keeps_everything_coinroute_reads(tmp_path):
+    from coinroute.sample import make_sample
+    src = fx.build(tmp_path / "src")
+    t = dt.datetime(2019, 6, 1, 9, 0)
+    old = fx.audit("7145550101", dt.datetime(2019, 6, 2), [("5551111", t)])
+    (src / "CDR/AUDITCDR.OLD").write_bytes(fx.var_file([old]))
+    rep = make_sample(src, tmp_path / "full", days=None, mask_numbers=False, with_logins=True, with_billing=True)
+    assert rep.kept["CDR/COMMERR.DAT"] == (11, 11)
+    assert rep.kept["CDR/AUDITCDR.OLD (batches not in .DAT)"] == (1, 1)
+    rep2 = import_xnet(tmp_path / "full", tmp_path / "f.db")
+    assert rep2.counts["audit calls"] == 4 and "SYSTEM/PASSWORD.DAT" in rep2.counts
+    con = sqlite3.connect(tmp_path / "f.db")
+    assert "5551111" in [r[0] for r in con.execute("SELECT dialed FROM audit_calls")]
+    con.close()

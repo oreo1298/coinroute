@@ -64,6 +64,8 @@ def cmd_users(a):
 
 def cmd_sample(a):
     from .sample import make_sample
+    if a.full:
+        a.all_history = a.no_mask = a.with_billing = a.with_logins = True
     rep = make_sample(a.xnet, a.dest, days=None if a.all_history else a.days, older_audit=a.older_audit,
                       mask_numbers=not a.no_mask,
                       with_program=a.with_program, with_billing=a.with_billing, with_logins=a.with_logins)
@@ -109,6 +111,9 @@ def main(argv=None):
     p.add_argument("--older-audit", type=int, default=5000,
                    help="older audit batches to keep, spread evenly over the earlier years (5000)")
     p.add_argument("--all-history", action="store_true", help="keep all history (much bigger)")
+    p.add_argument("--full", action="store_true",
+                   help="every record coinroute reads: all history, numbers unmasked, logins and billing "
+                        "(still drops indexes, backups and the program)")
     p.add_argument("--no-mask", action="store_true", help="don't mask the last 4 digits of dialed numbers")
     p.add_argument("--with-program", action="store_true", help="include XNET.EXE and the phone firmware files")
     p.add_argument("--with-billing", action="store_true", help="include billing CDRs (may hold card numbers)")

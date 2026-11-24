@@ -39,7 +39,7 @@ CREATE TABLE comm_errors (id INTEGER PRIMARY KEY, phone TEXT, group_no TEXT, sit
 CREATE TABLE call_accounting (id INTEGER PRIMARY KEY, phone TEXT, group_no TEXT, site_no TEXT,
     at TEXT, period_start TEXT, period_end TEXT, raw BLOB);
 CREATE TABLE audit_polls (id INTEGER PRIMARY KEY, phone TEXT, group_no TEXT, site_no TEXT,
-    at TEXT, declared_calls INTEGER, size_ok INTEGER, raw_header BLOB);
+    at TEXT, declared_calls INTEGER, size_ok INTEGER, source TEXT, raw_header BLOB);
 CREATE TABLE audit_calls (id INTEGER PRIMARY KEY, poll_id INTEGER, phone TEXT,
     dialed TEXT, call_date TEXT, call_time TEXT, detail BLOB);
 """
@@ -84,10 +84,14 @@ def find_xnet_root(path: Path) -> Path:
     raise FileNotFoundError(f"{path} does not look like an ExpressNet folder (no SITES/SITES.DAT)")
 
 
-def _rows(rep, root, rel, decode, *, progress=None):
+AUDIT_SOURCES = ("CDR/AUDITCDR.DAT", "CDR/AUDITCDR.OLD")
+
+
+def _rows(rep, root, rel, decode, *, progress=None, quiet_missing=False):
     path = find_file(root, rel)
     if path is None:
-        rep.missing.append(rel)
+        if not quiet_missing:
+            rep.missing.append(rel)
         return
     data = path.read_bytes()
     stats = ctree.ReadStats()
@@ -156,31 +160,49 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
         put("call_accounting", ["phone", "group_no", "site_no", "at", "period_start", "period_end", "raw"],
             _rows(rep, root, "CDR/CALLACCT.DAT", xnet.call_accounting_record, progress=progress))
 
-        poll_sql = ("INSERT INTO audit_polls (phone, group_no, site_no, at, declared_calls, size_ok, raw_header) "
-                    "VALUES (?,?,?,?,?,?,?)")
+        # Audit calls live in AUDITCDR.DAT and, on older installs, also in AUDITCDR.OLD (an
+        # earlier copy holding batches the current file lost or dropped). Import both; a batch
+        # already seen (same phone, time and call count) is not imported twice.
+        poll_sql = ("INSERT INTO audit_polls (phone, group_no, site_no, at, declared_calls, size_ok, source, "
+                    "raw_header) VALUES (?,?,?,?,?,?,?,?)")
         call_sql = ("INSERT INTO audit_calls (poll_id, phone, dialed, call_date, call_time, detail) "
                     "VALUES (?,?,?,?,?,?)")
-        calls, bad_size = [], 0
+        seen: dict = {}
         ncalls = 0
-        for a in _rows(rep, root, "CDR/AUDITCDR.DAT", xnet.audit_record, progress=progress):
-            cur.execute(poll_sql, (a["phone"], a["group_no"], a["site_no"], a["at"], a["declared_calls"],
-                                   int(a["size_ok"]), a["raw_header"]))
-            bad_size += not a["size_ok"]
-            if include_calls:
-                pid = cur.lastrowid
-                for c in a["calls"]:
-                    calls.append((pid, a["phone"], c["dialed"], c["call_date"], c["call_time"], c["detail"]))
-                if len(calls) >= 20000:
-                    cur.executemany(call_sql, calls)
-                    ncalls += len(calls)
-                    calls.clear()
-        if calls:
-            cur.executemany(call_sql, calls)
-            ncalls += len(calls)
+        for rel in AUDIT_SOURCES:
+            calls, bad_size, dupes, conflicts = [], 0, 0, 0
+            quiet = rel != AUDIT_SOURCES[0]
+            for a in _rows(rep, root, rel, xnet.audit_record, progress=progress, quiet_missing=quiet):
+                key = (a["phone"], a["at"], a["declared_calls"])
+                digest = hash(a["raw"])
+                if key in seen:
+                    dupes += 1
+                    conflicts += seen[key] != digest
+                    continue
+                seen[key] = digest
+                cur.execute(poll_sql, (a["phone"], a["group_no"], a["site_no"], a["at"], a["declared_calls"],
+                                       int(a["size_ok"]), rel.split("/")[-1], a["raw_header"]))
+                bad_size += not a["size_ok"]
+                if include_calls:
+                    pid = cur.lastrowid
+                    for c in a["calls"]:
+                        calls.append((pid, a["phone"], c["dialed"], c["call_date"], c["call_time"], c["detail"]))
+                    if len(calls) >= 20000:
+                        cur.executemany(call_sql, calls)
+                        ncalls += len(calls)
+                        calls.clear()
+            if calls:
+                cur.executemany(call_sql, calls)
+                ncalls += len(calls)
+            if rel in rep.counts and dupes:
+                rep.counts[rel + " (new)"] = rep.counts[rel] - dupes
+                if conflicts:
+                    rep.warnings.append(f"{rel}: {conflicts} batches duplicate one already read (same phone, "
+                                        "time and call count) but differ in bytes; kept the first one read")
+            if bad_size:
+                rep.warnings.append(f"{rel}: {bad_size} poll records whose size doesn't match "
+                                    "their call count (kept; calls read as far as possible)")
         rep.counts["audit calls"] = ncalls
-        if bad_size:
-            rep.warnings.append(f"CDR/AUDITCDR.DAT: {bad_size} poll records whose size doesn't match "
-                                "their call count (kept; calls read as far as possible)")
 
         con.executescript(INDEXES)
         meta = {

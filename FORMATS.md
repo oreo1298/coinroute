@@ -79,6 +79,12 @@ Text dates appear as `yymmdd` (CDR files), `yyyymmdd` (audit CDRs) and
 | 41 | 1 | number of calls *n* | ✅ (record size = 42 + 47·n in 99.6 % of records) |
 | 42 + 47·k | 47 | call entry *k* | |
 
+**CDR/AUDITCDR.OLD** ✅ has the same format: an earlier copy of the audit file
+(on one real install, last written 2020). It held ~31,500 batches (~825k calls)
+missing from the current file, so the importer reads both and skips batches
+already seen (same phone, timestamp and call count). Batches that repeat with
+different bytes are counted in a warning; the first one read is kept.
+
 Call entry: `dialed[17]` ✅, `date yyyymmdd[9]` ✅, `time hhmm[5]` ✅, then 16
 bytes of detail ❓ (probably duration, amounts, call type).
 

@@ -24,6 +24,7 @@ from .fields import datetime_to_minutes, minutes_to_datetime, u32
 FULL_HISTORY_FILES = {"CDR/COIN.DAT", "CDR/CALLACCT.DAT"}   # small once deleted slots are gone
 WINDOW_FILES = {"CDR/COMMERR.DAT"}                            # repetitive: recent window only
 AUDIT_FILE = "CDR/AUDITCDR.DAT"
+AUDIT_OLD_FILE = "CDR/AUDITCDR.OLD"      # earlier copy with batches the current file lacks
 PRIVATE_FILES = {"SYSTEM/PASSWORD.DAT"}
 BILLING_FILES = {"CDR/BILLCDR.DAT"}
 SKIP_SUFFIXES = (".IDX", ".OLD", ".IOL", ".SMM", ".LNK", ".BAD")
@@ -80,10 +81,19 @@ def _mask_number(field_bytes: bytes) -> bytes:
     return bytes(b)
 
 
-def _audit_subset(data: bytes, since_min: int, mask: bool, older: int) -> tuple[bytes, int, int]:
-    """All audit batches since `since_min`, plus about `older` earlier ones spread evenly."""
+def _audit_key(rec: bytes):
+    return rec[17:28], u32(rec, 28), rec[41]
+
+
+def _audit_subset(data: bytes, since_min: int, mask: bool, older: int,
+                  exclude: set | None = None) -> tuple[bytes, int, int, set]:
+    """All audit batches since `since_min`, plus about `older` earlier ones spread evenly.
+    Batches whose key is in `exclude` are dropped. Also returns the keys of every input batch."""
     recs = [rec for _, rec in ctree.variable_records(data) if len(rec) >= 42]
     total = len(recs)
+    keys = {_audit_key(r) for r in recs}
+    if exclude:
+        recs = [r for r in recs if _audit_key(r) not in exclude]
     old = [i for i, r in enumerate(recs) if u32(r, 28) < since_min]
     step = max(1, -(-len(old) // older)) if older else 0
     keep_old = set(old[::step]) if step else set()
@@ -100,7 +110,7 @@ def _audit_subset(data: bytes, since_min: int, mask: bool, older: int) -> tuple[
                     r[o:o + 17] = _mask_number(bytes(r[o:o + 17]))
         out += b"\xfa\xfa" + struct.pack("<II", len(r) + 10, len(r)) + r
         kept += 1
-    return bytes(out), kept, total
+    return bytes(out), kept, total, keys
 
 
 def make_sample(src: str | os.PathLike, dest: str | os.PathLike, *, days: int | None = 365,
@@ -125,10 +135,11 @@ def make_sample(src: str | os.PathLike, dest: str | os.PathLike, *, days: int | 
             rep.since = since.strftime("%Y-%m-%d")
 
     outputs: list[tuple[str, bytes]] = []
-    for up, (path, rel) in sorted(files.items()):
+    current_audit_keys: set = set()
+    for up, (path, rel) in sorted(files.items()):          # AUDITCDR.DAT sorts before .OLD
         size = path.stat().st_size
         rep.bytes_in += size
-        if up.endswith(SKIP_SUFFIXES):
+        if up.endswith(SKIP_SUFFIXES) and up != AUDIT_OLD_FILE:
             rep.skipped.append(f"{rel} (not read by coinroute)")
             continue
         if (up.endswith(PROGRAM_SUFFIXES) or up.startswith(PROGRAM_DIRS)) and not with_program:
@@ -148,8 +159,12 @@ def make_sample(src: str | os.PathLike, dest: str | os.PathLike, *, days: int | 
             new, kept, total = _fixed_subset(data, lambda r: u32(r, 28) >= since_min)
             rep.kept[rel] = (kept, total)
         elif up == AUDIT_FILE:
-            new, kept, total = _audit_subset(data, since_min, mask_numbers, older_audit)
+            new, kept, total, current_audit_keys = _audit_subset(data, since_min, mask_numbers, older_audit)
             rep.kept[rel] = (kept, total)
+        elif up == AUDIT_OLD_FILE:
+            new, kept, total, _ = _audit_subset(data, since_min, mask_numbers, older_audit,
+                                                exclude=current_audit_keys)
+            rep.kept[rel + " (batches not in .DAT)"] = (kept, total)
         else:
             new = data
             rep.kept[rel] = None
