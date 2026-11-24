@@ -13,7 +13,8 @@ from .report import format_summary, route_summary
 
 def cmd_import(a):
     def progress(rel, n):
-        print(f"  {rel}: {n:,} records...", file=sys.stderr)
+        if n:
+            print(f"  {rel}: {n:,} records...", file=sys.stderr)
     print(f"Importing {a.xnet} -> {a.db}", file=sys.stderr)
     rep = import_xnet(a.xnet, a.db, include_calls=not a.no_calls, progress=progress)
     for name, n in rep.counts.items():

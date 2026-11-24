@@ -12,8 +12,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import __version__
-from . import ctree, xnet
+from . import __version__, ctree, xnet
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -84,7 +83,18 @@ def find_xnet_root(path: Path) -> Path:
     raise FileNotFoundError(f"{path} does not look like an ExpressNet folder (no SITES/SITES.DAT)")
 
 
-def _rows(rep, root, rel, decode, *, progress=None):
+# The files read, in the order import_xnet reads them.
+SOURCE_FILES = [
+    "SYSTEM/X3SYSPAR.DAT", "SYSTEM/PASSWORD.DAT", "SITES/SITES.DAT", "LOCAL/GROUPS.DAT", "LOCAL/POLLIST.DAT",
+    "PARAM/MODEMS.DAT", "LOCAL/PORTS.DAT", "PARAM/CALLCOST.DAT", "PARAM/MISCOPT.DAT", "CDR/COIN.DAT",
+    "CDR/COMMERR.DAT", "CDR/CALLACCT.DAT", "CDR/AUDITCDR.DAT",
+]
+INDEX_STEP = "building indexes"
+
+
+def _rows(rep, root, rel, decode, *, progress=None, every=50000):
+    if progress:
+        progress(rel, 0)
     path = find_file(root, rel)
     if path is None:
         rep.missing.append(rel)
@@ -98,7 +108,8 @@ def _rows(rep, root, rel, decode, *, progress=None):
             n += 1
         except Exception as e:                       # keep going; note the bad record
             rep.warnings.append(f"{rel}: record skipped ({e})")
-        if progress and n % 50000 == 0:
+            continue
+        if progress and n % every == 0:
             progress(rel, n)
     rep.counts[rel] = n
     if stats.skipped_bytes:
@@ -108,7 +119,13 @@ def _rows(rep, root, rel, decode, *, progress=None):
 
 
 def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_calls: bool = True,
-                progress=None) -> ImportReport:
+                progress=None, progress_every: int = 50000) -> ImportReport:
+    """Read the ExpressNet folder `src` into a new SQLite database `db_path`.
+
+    `progress(step, n)` is called with n=0 when each file in SOURCE_FILES (and
+    finally INDEX_STEP) starts, then every `progress_every` records. If it raises,
+    the import stops and the partly written database is removed.
+    """
     root = find_xnet_root(Path(src))
     db_path = Path(db_path)
     if db_path.exists():
@@ -118,6 +135,7 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
     try:
         con.executescript(SCHEMA)
         cur = con.cursor()
+        pr = {"progress": progress, "every": max(1, progress_every)}
 
         def put(table, cols, rows):
             sql = f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})"
@@ -131,30 +149,31 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
                 cur.executemany(sql, batch)
 
         put("system", ["install_date", "company", "license_no", "raw"],
-            _rows(rep, root, "SYSTEM/X3SYSPAR.DAT", xnet.system_record))
+            _rows(rep, root, "SYSTEM/X3SYSPAR.DAT", xnet.system_record, **pr))
         put("users", ["user", "description", "password", "raw"],
-            _rows(rep, root, "SYSTEM/PASSWORD.DAT", xnet.user_record))
+            _rows(rep, root, "SYSTEM/PASSWORD.DAT", xnet.user_record, **pr))
         put("sites", ["phone", "description", "group_no", "site_no", "rate_record", "options_record",
                       "speed", "install_date", "location_name", "address", "city", "state", "zip",
                       "firmware_current", "firmware_target", "raw"],
-            _rows(rep, root, "SITES/SITES.DAT", xnet.site_record))
-        put("groups", ["group_no", "raw"], _rows(rep, root, "LOCAL/GROUPS.DAT", xnet.group_record))
+            _rows(rep, root, "SITES/SITES.DAT", xnet.site_record, **pr))
+        put("groups", ["group_no", "raw"], _rows(rep, root, "LOCAL/GROUPS.DAT", xnet.group_record, **pr))
         put("poll_lists", ["name", "description", "start_time", "raw"],
-            _rows(rep, root, "LOCAL/POLLIST.DAT", xnet.poll_list_record))
+            _rows(rep, root, "LOCAL/POLLIST.DAT", xnet.poll_list_record, **pr))
         put("modems", ["name", "description", "init", "answer", "dial_1", "dial_2", "dial_3", "reset", "raw"],
-            _rows(rep, root, "PARAM/MODEMS.DAT", xnet.modem_record))
+            _rows(rep, root, "PARAM/MODEMS.DAT", xnet.modem_record, **pr))
         put("ports", ["port_no", "modem_name", "modem_description", "init", "answer", "dial_1", "dial_2",
                       "dial_3", "reset", "line_number", "raw"],
-            _rows(rep, root, "LOCAL/PORTS.DAT", xnet.port_record))
-        put("rate_records", ["name", "raw"], _rows(rep, root, "PARAM/CALLCOST.DAT", xnet.named_record))
-        put("options_records", ["name", "raw"], _rows(rep, root, "PARAM/MISCOPT.DAT", xnet.named_record))
+            _rows(rep, root, "LOCAL/PORTS.DAT", xnet.port_record, **pr))
+        put("rate_records", ["name", "raw"], _rows(rep, root, "PARAM/CALLCOST.DAT", xnet.named_record, **pr))
+        put("options_records", ["name", "raw"],
+            _rows(rep, root, "PARAM/MISCOPT.DAT", xnet.named_record, **pr))
         put("coin_polls", ["phone", "group_no", "site_no", "at", "coin_total_cents", "cash_box_cents",
                            "status_bytes", "raw"],
-            _rows(rep, root, "CDR/COIN.DAT", xnet.coin_record, progress=progress))
+            _rows(rep, root, "CDR/COIN.DAT", xnet.coin_record, **pr))
         put("comm_errors", ["phone", "group_no", "site_no", "at", "code", "message", "raw"],
-            _rows(rep, root, "CDR/COMMERR.DAT", xnet.comm_error_record, progress=progress))
+            _rows(rep, root, "CDR/COMMERR.DAT", xnet.comm_error_record, **pr))
         put("call_accounting", ["phone", "group_no", "site_no", "at", "period_start", "period_end", "raw"],
-            _rows(rep, root, "CDR/CALLACCT.DAT", xnet.call_accounting_record, progress=progress))
+            _rows(rep, root, "CDR/CALLACCT.DAT", xnet.call_accounting_record, **pr))
 
         poll_sql = ("INSERT INTO audit_polls (phone, group_no, site_no, at, declared_calls, size_ok, raw_header) "
                     "VALUES (?,?,?,?,?,?,?)")
@@ -162,7 +181,7 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
                     "VALUES (?,?,?,?,?,?)")
         calls, bad_size = [], 0
         ncalls = 0
-        for a in _rows(rep, root, "CDR/AUDITCDR.DAT", xnet.audit_record, progress=progress):
+        for a in _rows(rep, root, "CDR/AUDITCDR.DAT", xnet.audit_record, **pr):
             cur.execute(poll_sql, (a["phone"], a["group_no"], a["site_no"], a["at"], a["declared_calls"],
                                    int(a["size_ok"]), a["raw_header"]))
             bad_size += not a["size_ok"]
@@ -182,6 +201,8 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
             rep.warnings.append(f"CDR/AUDITCDR.DAT: {bad_size} poll records whose size doesn't match "
                                 "their call count (kept; calls read as far as possible)")
 
+        if progress:
+            progress(INDEX_STEP, 0)
         con.executescript(INDEXES)
         meta = {
             "source": str(root.resolve()),
