@@ -85,8 +85,9 @@ Later (not required for M2): PyInstaller build for Windows; printable reports
 
 ## Milestone 3 — decode the remaining fields
 
-Needs real data to verify, so this is done on Andrew's machine
-(`COINROUTE_REAL_XNET`) or with data uploaded to a session (never committed).
+Needs real data to verify: either on Andrew's machine (`COINROUTE_REAL_XNET`),
+or in a session with a sample zip he uploads (made with `coinroute sample`;
+unzip it outside the repo, e.g. /tmp, and never commit it).
 Known gaps, with leads:
 
 - **Trouble flags.** ExpressNet's Trouble Report prints per-poll codes: AE Call

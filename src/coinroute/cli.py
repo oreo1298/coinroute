@@ -62,6 +62,19 @@ def cmd_users(a):
         print(f"{u['user']:<14} {u['password']:<10} {u['description']}")
 
 
+def cmd_sample(a):
+    from .sample import make_sample
+    rep = make_sample(a.xnet, a.dest, days=None if a.all_history else a.days, older_audit=a.older_audit,
+                      mask_numbers=not a.no_mask,
+                      with_program=a.with_program, with_billing=a.with_billing, with_logins=a.with_logins)
+    print(f"Recent window from: {rep.since or 'all'}")
+    for rel, kept in rep.kept.items():
+        if kept:
+            print(f"  {rel:<28} kept {kept[0]:>9,} of {kept[1]:>9,} records")
+    print(f"  {len(rep.skipped)} files left out (see SAMPLE_README.txt)")
+    print(f"{rep.bytes_in / 1e6:,.1f} MB -> {rep.bytes_out / 1e6:,.1f} MB: {a.dest}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="coinroute", description="Payphone route manager (ExpressNet replacement).")
     ap.add_argument("--version", action="version", version=f"coinroute {__version__}")
@@ -87,6 +100,20 @@ def main(argv=None):
     p = sub.add_parser("users", help="show ExpressNet logins and passwords from an XNET folder")
     p.add_argument("xnet")
     p.set_defaults(func=cmd_users)
+
+    p = sub.add_parser("sample", help="make a small, shareable sample of an XNET folder for development")
+    p.add_argument("xnet")
+    p.add_argument("dest", help="new .zip file (or a new folder)")
+    p.add_argument("--days", type=int, default=365,
+                   help="recent window for comm errors and audit calls, back from the data's end (365)")
+    p.add_argument("--older-audit", type=int, default=5000,
+                   help="older audit batches to keep, spread evenly over the earlier years (5000)")
+    p.add_argument("--all-history", action="store_true", help="keep all history (much bigger)")
+    p.add_argument("--no-mask", action="store_true", help="don't mask the last 4 digits of dialed numbers")
+    p.add_argument("--with-program", action="store_true", help="include XNET.EXE and the phone firmware files")
+    p.add_argument("--with-billing", action="store_true", help="include billing CDRs (may hold card numbers)")
+    p.add_argument("--with-logins", action="store_true", help="include SYSTEM/PASSWORD.DAT")
+    p.set_defaults(func=cmd_sample)
 
     a = ap.parse_args(argv)
     try:

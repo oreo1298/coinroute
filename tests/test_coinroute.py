@@ -188,3 +188,56 @@ def test_real_folder_invariants():
         if c["at"] != f"{c['date_text']} {c['time_text']}":
             mismatched += 1
     assert n > 0 and mismatched == 0, f"{mismatched}/{n} coin timestamps disagree with their text dates"
+
+
+# --- sample command -------------------------------------------------------------------------
+
+def test_sample_keeps_recent_history_masks_numbers_and_still_imports(tmp_path):
+    from coinroute.sample import make_sample
+    src = fx.build(tmp_path / "src", damaged_audit=True)
+    (src / "SITES/SITES.IDX").write_bytes(b"\0" * 4096)
+    (src / "XNET.EXE").write_bytes(b"MZ")
+    (src / "CDR/BILLCDR.DAT").write_bytes(fx.var_file([]))
+    zpath = tmp_path / "sample.zip"
+    rep = make_sample(src, zpath, days=30)
+    assert rep.since == "2026-04-02"
+    assert rep.kept["CDR/COIN.DAT"] == (42, 42)                 # coin history is kept whole
+    assert rep.kept["CDR/COMMERR.DAT"] == (10, 11)
+    skipped = " ".join(rep.skipped)
+    for name in ("SITES.IDX", "XNET.EXE", "PASSWORD.DAT", "BILLCDR.DAT"):
+        assert name in skipped
+    import zipfile
+    with zipfile.ZipFile(zpath) as z:
+        names = z.namelist()
+        assert "SAMPLE_README.txt" in names and "XNET/SITES/SITES.DAT" in names
+        assert not any(n.upper().endswith((".IDX", ".EXE")) for n in names)
+        z.extractall(tmp_path / "out")
+    db = tmp_path / "s.db"
+    rep2 = import_xnet(tmp_path / "out", db)
+    assert rep2.counts["SITES/SITES.DAT"] == 2 and rep2.counts["CDR/COIN.DAT"] == 42
+    con = sqlite3.connect(db)
+    dialed = sorted(r[0] for r in con.execute("SELECT dialed FROM audit_calls"))
+    assert dialed == ["555XXXX", "555XXXX", "911"]               # 7-digit numbers masked, 911 kept
+    con.close()
+
+
+def test_sample_spreads_older_audit_batches(tmp_path):
+    from coinroute.sample import _audit_subset
+    end = dt.datetime(2026, 5, 2, 1, 0)
+    t = dt.datetime(2026, 1, 1, 12, 0)
+    recs = [fx.audit("7145550101", end - dt.timedelta(days=d), [("5551212", t)]) for d in range(1000, -1, -1)]
+    data = fx.var_file(recs)
+    since = fx.datetime_to_minutes(end - dt.timedelta(days=10))
+    out, kept, total = _audit_subset(data, since, True, older=99)
+    assert total == 1001 and 11 + 90 <= kept <= 11 + 99      # 11 recent + ~99 spread older
+    got = [xnet.audit_record(r)["at"] for r in ctree.records(out)]
+    first = (end - dt.timedelta(days=1000)).strftime("%Y-%m-%d %H:%M")
+    assert got[0] == first and got[-1] == "2026-05-02 01:00"        # spread reaches back to the start
+
+
+def test_sample_refuses_existing_destination(tmp_path):
+    from coinroute.sample import make_sample
+    src = fx.build(tmp_path / "src")
+    (tmp_path / "out.zip").write_bytes(b"x")
+    with pytest.raises(FileExistsError):
+        make_sample(src, tmp_path / "out.zip")

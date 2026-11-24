@@ -22,8 +22,9 @@ continues per [docs/ROADMAP.md](docs/ROADMAP.md).
    no CSV exports, and no real phone numbers, site names, addresses, company
    names or passwords from a real installation in code, tests, docs, commit
    messages or PR text. Tests use synthetic data (`tests/fakexnet.py`: 555
-   numbers, made-up places). If someone uploads real data to a session, use it
-   only to check decoding, then report findings in general terms.
+   numbers, made-up places). Real data reaches a session only as a sample zip made
+   by `coinroute sample` (dialed numbers masked, no logins/billing); use it only
+   to check decoding, keep it outside the repo, and report findings in general terms.
 2. **No Protel files in git** — not `XNET.EXE`, `RTM.EXE`, `DPMI16BI.OVL`,
    phone firmware (`PARAM/SOFTWARE/*`), manuals or disk images. Don't paste
    disassembly listings of Protel code into the repo; describe formats and
@@ -47,7 +48,8 @@ src/coinroute/
   xnet.py       record decoders for each ExpressNet file + COMM_ERRORS table
   importer.py   XNET folder -> new SQLite db (schema at top of file)
   report.py     route health summary
-  cli.py        coinroute import | summary | export-csv | users
+  sample.py     small shareable sample of an XNET folder (for sessions that need real data)
+  cli.py        coinroute import | summary | export-csv | users | sample
 tests/          fakexnet.py builds synthetic XNET folders; test_*.py
 tools/fake_upms.py   stand-in UPMS1200 modem (serial or pty) for bench tests
 tools/re/ne.py       NE-executable helper for studying XNET.EXE (never commit the EXE)

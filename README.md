@@ -28,6 +28,8 @@ coinroute import /path/to/XNET route.db
 coinroute summary route.db            # which phones answer, cash in box, failures
 coinroute export-csv route.db out/    # every table as CSV (add --calls for call records)
 coinroute users /path/to/XNET         # ExpressNet logins and passwords
+coinroute sample /path/to/XNET s.zip  # small (~2 MB) development sample: recent + spread history,
+                                      # dialed numbers masked, no logins/billing/program/indexes
 ```
 
 The XNET folder is only read. Every imported row keeps the original record
