@@ -24,7 +24,10 @@ from .xnet import (
     coin_extras,
     options_fields,
     poll_list_days,
+    group_poll_list,
+    poll_list_number,
     port_settings,
+    site_security_code,
 )
 
 FMT = "%Y-%m-%d %H:%M"
@@ -227,7 +230,7 @@ class RouteDB:
                 return None
             s = {"phone": phone, "group_no": h["group_no"], "site_no": h["site_no"], "removed": True}
         else:
-            s.pop("raw", None)
+            s["security_code"] = site_security_code(s.pop("raw", None) or b"")
             s["removed"] = False
             s["rate_record_found"] = bool(
                 self._one("SELECT 1 x FROM rate_records WHERE name=?", s["rate_record"])
@@ -312,6 +315,31 @@ class RouteDB:
     def comm_errors_page(self, phone: str, after=None, limit: int = 200) -> list[dict]:
         """A page of a phone's communication errors, newest first."""
         return self._page("comm_errors", "id, at, code, message", "at", "phone=?", [phone], after, limit)
+
+    def failures_page(self, after=None, limit: int = 200) -> list[dict]:
+        """Communication errors of every phone, newest first, with the site's description."""
+        rows = self._page("comm_errors", "id, phone, group_no, at, code, message", "at", "1=1", [], after, limit)
+        desc = dict(self.con.execute("SELECT phone, description FROM sites").fetchall())
+        for r in rows:
+            r["description"] = desc.get(r["phone"], "")
+            r["phone_display"] = phone_display(r["phone"])
+        return rows
+
+    def collections(self, start: str, end: str) -> list[dict]:
+        """Polls between start and end that found the coin box emptied, with the amount taken out."""
+        sites = {r["phone"]: r for r in self._all("SELECT phone, description, group_no FROM sites")}
+        out = []
+        for phone, polls in self._polls_between(start, end).items():
+            for r in polls:
+                if "E$" in r.get("flags", []):
+                    site = sites.get(phone, {})
+                    out.append({
+                        "phone": phone, "phone_display": phone_display(phone),
+                        "group_no": site.get("group_no", ""), "description": site.get("description", ""),
+                        "at": r["at"], "collected_cents": r.get("amount_collected_cents"),
+                        "cash_box_cents": r["cash_box_cents"],
+                    })
+        return sorted(out, key=lambda r: (r["at"], r["phone"]), reverse=True)
 
     def comm_error_counts(self, phone: str) -> list[dict]:
         """How often each failure happened for a phone, with first and last time."""
@@ -492,19 +520,42 @@ class RouteDB:
 
     def poll_lists(self) -> list[dict]:
         rows = self._all("SELECT name, description, start_time, raw FROM poll_lists ORDER BY rowid")
+        groups = self._group_lists()
         for r in rows:
-            days = poll_list_days(r.pop("raw") or b"")
+            raw = r.pop("raw") or b""
+            days = poll_list_days(raw)
             r["days"] = days
             r["days_text"] = "every day" if len(days) == 7 else (", ".join(days) or "no days")
+            r["number"] = poll_list_number(raw)
+            r["groups"] = sorted(g for g, n in groups.items() if n is not None and n == r["number"])
         return rows
+
+    def _group_lists(self) -> dict[str, int | None]:
+        return {g: group_poll_list(raw or b"") for g, raw in self.con.execute("SELECT group_no, raw FROM groups")}
+
+    def poll_plan(self) -> list[dict]:
+        """Each poll list with its phones (the sites of the groups assigned to it), for auto polling."""
+        plan = []
+        for pl in self.poll_lists():
+            phones = [r["phone"] for g in pl["groups"]
+                      for r in self._all("SELECT phone FROM sites WHERE group_no=? ORDER BY phone", g)]
+            plan.append({**pl, "phones": phones})
+        return plan
 
     def group_table(self) -> list[dict]:
         """Groups with how many sites each holds (groups used by sites but not defined are included)."""
-        return self._all(
+        rows = self._all(
             "SELECT g.group_no, (SELECT count(*) FROM sites s WHERE s.group_no=g.group_no) sites, "
             "g.group_no IN (SELECT group_no FROM groups) defined "
             "FROM (SELECT group_no FROM groups UNION SELECT group_no FROM sites) g ORDER BY g.group_no"
         )
+        lists = self._group_lists()
+        names = {pl["number"]: pl["name"] for pl in self._all("SELECT name, raw FROM poll_lists")
+                 for pl in [{"number": poll_list_number(pl["raw"] or b""), "name": pl["name"]}]}
+        for r in rows:
+            n = lists.get(r["group_no"])
+            r["poll_list"] = names.get(n, str(n)) if n else ""
+        return rows
 
     def rate_records(self) -> list[dict]:
         return self._all(

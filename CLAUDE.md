@@ -34,7 +34,7 @@ app) are done; work continues per [docs/ROADMAP.md](docs/ROADMAP.md).
 5. When a field layout is learned or its confidence changes, update
    `FORMATS.md` (✅ verified · 🟡 probable · ❓ unknown) in the same commit.
 6. The core (`ctree`, `fields`, `scramble`, `xnet`, `importer`, `report`, `cli`,
-   `db`, `demo`, `protocol`, `simphone`, `modem`, `reports`) stays **standard-library only** and must not import Qt
+   `db`, `demo`, `protocol`, `simphone`, `modem`, `reports`, `poller`, `autopoll`) stays **standard-library only** and must not import Qt
    (`tests/test_core_without_qt.py` checks). GUI code lives in
    `src/coinroute/gui/`.
 
@@ -52,15 +52,20 @@ src/coinroute/
   reports.py    printable Coin and Trouble reports (HTML) from RouteDB.coin_report / trouble_report
   demo.py       synthetic XNET folder (make_demo) + the record builders tests use
   protocol.py   the phone link: frames, check byte, commands, Link (send/retry) -- docs/PROTOCOL.md
-  simphone.py   a simulated payphone answering protocol.py, for tests and bench work
-  modem.py      Hayes/UPMS1200 driver: reset, dial, answer, hang up; SerialLine; results -> COMM_ERRORS
-  cli.py        coinroute import | summary | export-csv | users | demo | report | probe | gui
+  simphone.py   a simulated payphone answering protocol.py, and SimModemLine (modem + phone, in-process)
+  modem.py      Hayes/UPMS1200 driver: reset, dial, answer, hang up; SerialLine / PySerialLine; results -> COMM_ERRORS
+  poller.py     one poll (ExpressNet's steps, its error codes) and PollStore: results into the route db
+  autopoll.py   poll lists on their schedule (groups -> lists, days, start time, retries)
+  cli.py        coinroute import | summary | export-csv | users | demo | report | poll | autopoll | probe | tui | gui
+  tui/          terminal version laid out like ExpressNet: canvas (curses / text), widgets
+                (menu, table, form, prompt), app (screen stack, key bar), screens (the menu tree)
   gui/          PySide6 app: mainwindow, sitesview, detail (+ chart), settingsview,
                 importdlg, workers (QThread jobs), models (row + paged table models), style
 tests/          fakexnet.py (tiny fixed folder), conftest.py (demo route fixtures); test_*.py,
                 test_gui_*.py need pytest-qt
 tools/fake_upms.py   stand-in UPMS1200 modem (serial or pty) for bench tests
 tools/screenshots.py renders every GUI screen from the demo route to PNG
+tools/tui_shots.py   renders the terminal screens to PNG (key sequences in SHOTS; add new screens)
 tools/serial_tap.py  logs the bytes between ExpressNet and the UPMS1200 (both ways); --decode shows frames
 tools/re/ne.py       NE-executable helper for studying XNET.EXE (never commit the EXE)
 FORMATS.md           every known file layout, with confidence marks
@@ -78,6 +83,7 @@ QT_QPA_PLATFORM=offscreen pytest -q            # GUI tests in a headless session
 COINROUTE_REAL_XNET=/path/to/XNET pytest -q    # extra checks; only where real data exists
 PYTHONPATH=src python -m coinroute --help
 coinroute demo /tmp/d && coinroute import /tmp/d/XNET /tmp/d.db && coinroute gui /tmp/d.db
+coinroute tui /tmp/d.db                        # terminal version (Windows: pip install '.[tui]')
 ```
 
 If Qt fails to load in a fresh container (`libEGL.so.1: cannot open shared

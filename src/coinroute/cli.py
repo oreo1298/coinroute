@@ -113,6 +113,105 @@ def cmd_probe(a):
         line.close()
 
 
+def cmd_poll(a):
+    from .db import RouteDB
+    from .modem import GENERIC, UPMS1200, Modem, ModemError, open_line
+    from .poller import Poller, PollStore, simulated_phone, site_for_poll
+    from .simphone import SimModemLine
+
+    phone = "".join(ch for ch in a.phone if ch.isdigit())
+    with RouteDB(a.db) as db:
+        site = site_for_poll(db, phone)
+    if site is None:
+        sys.exit(f"coinroute: no site {a.phone} in {a.db}")
+    if a.simulate:
+        line = SimModemLine(simulated_phone(a.db, site))
+    elif a.port:
+        line = open_line(a.port, a.baud)
+    else:
+        sys.exit("coinroute: give --port DEVICE (the modem's serial port), or --simulate")
+    try:
+        modem = Modem(line, GENERIC if a.generic else UPMS1200)
+        out = Poller(modem, progress=lambda s: print(f"  {s}"), collect_records=a.cdrs,
+                     set_clock=not a.no_clock, dial_prefix=a.prefix).poll(site)
+    except ModemError as e:
+        sys.exit(f"coinroute: modem: {e}")
+    finally:
+        if hasattr(line, "close"):
+            line.close()
+    st = out.status
+    if out.ok and st:
+        print(f"OK: coins in phone {st.coin_total / 100:,.2f} (counter), box {st.percent_full}% full, "
+              f"flags {' '.join(_flags(st)) or 'none'}")
+    else:
+        print(f"Failed: {out.message} (code {out.code})")
+    if a.dry_run:
+        print("(not saved: --dry-run)")
+    else:
+        with PollStore(a.db) as store:
+            store.record(site, out)
+        print(f"Saved to {a.db}.")
+    return 0 if out.ok else 1
+
+
+def cmd_autopoll(a):
+    import threading
+
+    from .autopoll import AutoPoller
+    from .db import RouteDB
+    from .modem import GENERIC, UPMS1200, open_line
+    from .poller import simulated_phone, site_for_poll
+    from .simphone import SimModemLine
+
+    if not a.port and not a.simulate:
+        sys.exit("coinroute: give --port DEVICE (the modem's serial port), or --simulate")
+
+    def line_for(phone=None):
+        if not a.simulate:
+            return open_line(a.port, a.baud)
+        with RouteDB(a.db) as db:
+            site = site_for_poll(db, ap.current)
+        return SimModemLine(simulated_phone(a.db, site))
+
+    stamp = lambda m: print(f"{__import__('time').strftime('%H:%M:%S')}  {m}", flush=True)
+    ap = AutoPoller(a.db, line_for, profile=GENERIC if a.generic else UPMS1200, progress=stamp,
+                    retries=a.retries, poller_options={"dial_prefix": a.prefix})
+    for pl in ap.plan():
+        print(f"  list {pl['number']} {pl['name']:<12} {pl['start_time']:>5}  {pl['days_text']:<28} "
+              f"{len(pl['phones'])} phones")
+    if a.list:
+        pl = next((x for x in ap.plan() if str(x["number"]) == a.list or x["name"] == a.list), None)
+        if pl is None:
+            sys.exit(f"coinroute: no poll list {a.list}")
+        ap.run_list(pl)
+        return 0
+    if a.once:
+        ap.run_due()
+        return 0
+    stop = threading.Event()
+    try:
+        ap.run_forever(stop)
+    except KeyboardInterrupt:
+        stop.set()
+    return 0
+
+
+def _flags(st):
+    from .xnet import trouble_flags
+
+    return trouble_flags(bytes(48) + st.flags)
+
+
+def cmd_tui(a):
+    try:
+        import curses  # noqa: F401
+    except ImportError:
+        sys.exit("coinroute: the terminal version needs curses; on Windows: pip install windows-curses")
+    from .tui.screens import run
+
+    return run(a.db)
+
+
 def cmd_gui(a):
     try:
         from .gui.app import run
@@ -167,6 +266,35 @@ def main(argv=None):
     p.add_argument("--dial-timeout", type=float, default=60.0)
     p.add_argument("--reply-timeout", type=float, default=3.0)
     p.set_defaults(func=cmd_probe)
+
+    p = sub.add_parser("poll", help="call one phone now and save the result in the route database")
+    p.add_argument("db", help="route database (made by `coinroute import`)")
+    p.add_argument("phone", help="the site's phone number")
+    p.add_argument("--port", help="the modem's serial port (e.g. /dev/ttyUSB0 or COM1)")
+    p.add_argument("--baud", type=int, default=9600, help="PC-to-modem speed (default 9600)")
+    p.add_argument("--generic", action="store_true", help="a generic Hayes modem instead of the UPMS1200")
+    p.add_argument("--prefix", default="", help="dial this before the number (e.g. 1, or 9, for a PBX)")
+    p.add_argument("--cdrs", action="store_true", help="also read the phone's call records (left in the phone)")
+    p.add_argument("--no-clock", action="store_true", help="don't set the phone's clock")
+    p.add_argument("--simulate", action="store_true", help="poll a simulated phone instead (no modem needed)")
+    p.add_argument("--dry-run", action="store_true", help="don't save the result")
+    p.set_defaults(func=cmd_poll)
+
+    p = sub.add_parser("autopoll", help="run the poll lists on their schedule (until Ctrl-C)")
+    p.add_argument("db", help="route database (made by `coinroute import`)")
+    p.add_argument("--port", help="the modem's serial port (e.g. /dev/ttyUSB0 or COM1)")
+    p.add_argument("--baud", type=int, default=9600, help="PC-to-modem speed (default 9600)")
+    p.add_argument("--generic", action="store_true", help="a generic Hayes modem instead of the UPMS1200")
+    p.add_argument("--prefix", default="", help="dial this before each number")
+    p.add_argument("--retries", type=int, default=1, help="passes over failed phones at the end of a run")
+    p.add_argument("--once", action="store_true", help="run whatever is due now, then stop")
+    p.add_argument("--list", help="run this poll list now (number or name), then stop")
+    p.add_argument("--simulate", action="store_true", help="poll simulated phones instead (no modem needed)")
+    p.set_defaults(func=cmd_autopoll)
+
+    p = sub.add_parser("tui", help="start the terminal version (menus like ExpressNet's)")
+    p.add_argument("db", nargs="?", help="route database to open (made by `coinroute import`)")
+    p.set_defaults(func=cmd_tui)
 
     p = sub.add_parser("gui", help="start the desktop app")
     p.add_argument("db", nargs="?", help="route database to open")

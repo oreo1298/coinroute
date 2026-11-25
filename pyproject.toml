@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 gui = ["PySide6>=6.6"]
+tui = ["windows-curses>=2.3; platform_system == 'Windows'"]
 modem = ["pyserial>=3.5"]
 
 [project.scripts]

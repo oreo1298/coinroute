@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
 
         self.sites = SitesView()
         self.sites.open_site.connect(self.open_site)
+        self.sites.poll_site.connect(self.poll_site)
         self.settings_view = SettingsView()
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -169,6 +170,9 @@ class MainWindow(QMainWindow):
             lambda: self._close_tab(self.tabs.currentIndex()),
             QKeySequence.StandardKey.Close,
         )
+
+        md = mb.addMenu("&Modems")
+        self.act_poll = self._action(md, "&Poll now…", self.poll_selected, "Ctrl+P")
 
         h = mb.addMenu("&Help")
         self._action(h, "&About coinroute", self.about)
@@ -256,6 +260,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(1 if has else 0)
         self.act_export.setEnabled(has)
         self.act_reports.setEnabled(has)
+        self.act_poll.setEnabled(has)
         self.act_close.setEnabled(has)
         if not has:
             self.setWindowTitle("coinroute")
@@ -272,6 +277,26 @@ class MainWindow(QMainWindow):
         )
         self.source_label.setToolTip(str(self.db.path.resolve()))
         self.end_label.setText(f"Data ends {_nice_time(meta.get('data_end'))}")
+
+    # --- polling ---
+
+    def poll_selected(self) -> None:
+        w = self.tabs.currentWidget()
+        phone = getattr(w, "phone", None) or self.sites.selected_phone()
+        if phone:
+            self.poll_site(phone)
+        else:
+            QMessageBox.information(self, "Poll now", "Select a site in the Sites view first.")
+
+    def poll_site(self, phone: str):
+        if not self.db:
+            return None
+        from .polldlg import PollDialog
+
+        dlg = PollDialog(str(self.db.path), phone, self)
+        dlg.polled.connect(lambda _p: self.refresh())
+        dlg.open()
+        return dlg
 
     # --- site tabs ---
 

@@ -67,6 +67,62 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+### Polling (first version)
+
+coinroute can now call a phone itself, following ExpressNet's steps
+(docs/PROTOCOL.md): dial, read the phone's status (coin counter, cash
+collected, how full the box is, trouble flags, clock), send the site's
+security code, clear the coin flag once a collection is noted, set the
+phone's clock, hang up. The result goes into the route database like
+ExpressNet's own records, so the Sites view, history and reports show it.
+
+```sh
+coinroute poll route.db 210-555-0108 --port /dev/ttyUSB0   # Windows: --port COM1 (pip install '.[modem]')
+coinroute poll route.db 210-555-0108 --simulate            # try it on a simulated phone first
+```
+
+Auto polling runs ExpressNet's poll lists on their days from their start
+time (each group's list comes from GROUPS.DAT), trying failed phones again
+at the end of a run:
+
+```sh
+coinroute autopoll route.db --port /dev/ttyUSB0      # keeps running; Ctrl-C stops it
+coinroute autopoll route.db --simulate --list NIGHTLY  # one list now, on simulated phones
+```
+
+In the terminal version: Modems → Manual Polling, and Modems → Auto
+Polling → Stop/Restart (F2); in the desktop app: Modems → Poll now (port
+`SIM` for the simulated phone everywhere). **This has not been tried on a real phone yet**: run the
+first real polls while ExpressNet is still at hand, ideally recording the
+line with `tools/serial_tap.py`. Call records are only read with `--cdrs`
+and stay in the phone until the command that clears them is known.
+
+### Terminal version
+
+For anyone who knows ExpressNet's screens: the same numbered menus, the same
+blue screen, a description of the highlighted item above a key bar, in any
+terminal window (80x24 or larger) on Linux, macOS or Windows.
+
+```sh
+pip install -e '.[tui]'               # on Windows this adds windows-curses; elsewhere curses is built in
+coinroute tui route.db
+coinroute tui                         # reopens the route used last
+```
+
+In the Windows download (`coinroute-windows`), double-click
+`coinroute-terminal.bat` to start it.
+
+Press a menu item's number or move with the arrow keys and ENTER; ESC goes
+back; F-keys on a screen are listed in the key bar. **1** looks up a site
+(type to search), **4** runs the Coin and Trouble reports (F2 saves them as
+text), **5** shows ports, polling lists and every failed call, **7** opens a
+route or imports an ExpressNet folder. Items coinroute can't do yet stay in
+their usual place and say so.
+
+![Main menu](docs/screenshots/tui-main-menu.png)
+![Site record](docs/screenshots/tui-site-record.png)
+![Trouble report](docs/screenshots/tui-trouble-report.png)
+
 ### Try it without real data
 
 ```sh

@@ -256,9 +256,12 @@ def port(no: int, modem_rec: bytes, line: str, speed: str = "1200") -> bytes:
     return bytes(r)
 
 
-def group(no: str) -> bytes:
+def group(no: str, poll_list: int | None = None) -> bytes:
     r = bytearray(22)
     put(r, 1, no, 7)
+    if poll_list:
+        r[8], r[11] = 1, poll_list  # assigned to a poll list (as ExpressNet marks it)
+    r[21] = 0x20
     return bytes(r)
 
 
@@ -655,7 +658,7 @@ def make_demo(
     (x / "LOCAL/PORTS.DAT").write_bytes(
         fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101", "300")])
     )
-    (x / "LOCAL/GROUPS.DAT").write_bytes(fixed_file(22, [group(g) for g in GROUPS]))
+    (x / "LOCAL/GROUPS.DAT").write_bytes(fixed_file(22, [group(g, 1) for g in GROUPS]))  # all NIGHTLY
     (x / "LOCAL/POLLIST.DAT").write_bytes(
         fixed_file(
             231,

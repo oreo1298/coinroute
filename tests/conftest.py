@@ -46,3 +46,10 @@ def db(demo_db):
     d = RouteDB(demo_db)
     yield d
     d.close()
+
+
+@pytest.fixture(autouse=True)
+def _user_config(tmp_path, monkeypatch):
+    """Settings the programs remember (e.g. the terminal version's last route) go to a temp folder."""
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))

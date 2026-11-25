@@ -261,6 +261,10 @@ From PHBILAUD.C; addresses and sizes are ExpressNet's constants.
   its docstring.
 - `protocol.Status` / `Link.receive_status()` — the status fields above, with
   ExpressNet's phone-number and phone-type checks.
+- `coinroute.poller` — a whole poll in this order, stored like ExpressNet's
+  records; `coinroute poll DB PHONE --port DEV` (or `--simulate`).
+- `simphone.SimModemLine` — a modem with a simulated phone behind it, in
+  process, on any platform (the poller's tests and `--simulate`).
 
 ## What a real capture must settle
 
