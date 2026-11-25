@@ -254,6 +254,7 @@ class SitesView(QWidget):
     """Toolbar (search, group, window, removed), status chips with totals, and the sites table."""
 
     open_site = Signal(str)  # phone digits
+    poll_site = Signal(str)  # phone digits: "Poll now…" from the context menu
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -491,6 +492,10 @@ class SitesView(QWidget):
         a = QAction("Open site", m)
         a.triggered.connect(lambda: self.open_site.emit(row["phone_digits"]))
         m.addAction(a)
+        pl = QAction("Poll now…", m)
+        pl.triggered.connect(lambda: self.poll_site.emit(row["phone_digits"]))
+        pl.setEnabled(not row["removed"])
+        m.addAction(pl)
         c = QAction("Copy phone number", m)
         c.triggered.connect(lambda: QGuiApplication.clipboard().setText(row["phone"]))
         m.addAction(c)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QSettings, QStandardPaths, Qt
@@ -141,6 +142,19 @@ def main(argv=None) -> int:
         settle(app)
         dlg.grab().save(str(out / f"report-{kind}{sfx}.png"))
         dlg.close()
+
+    # Poll now (simulated phone), after the call has finished
+    pdlg = win.poll_site(rows[0]["phone_digits"])
+    pdlg.port.setCurrentText("SIM")
+    pdlg.go.click()
+    for _ in range(500):  # up to ~5 s for the simulated call and the result
+        settle(app)
+        if not pdlg.result.text().startswith("Polling"):
+            break
+        time.sleep(0.01)
+    settle(app)
+    pdlg.grab().save(str(out / f"poll-dialog{sfx}.png"))
+    pdlg.close()
 
     win.tabs.setCurrentIndex(1)
     sv = win.settings_view
