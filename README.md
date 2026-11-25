@@ -82,7 +82,8 @@ coinroute gui /tmp/demo.db
 ## Tools
 
 - `tools/fake_upms.py` — a stand-in for the Protel UPMS1200 modem, to test
-  ExpressNet (in a VM) or coinroute without the real modem. See its `--help`.
+  ExpressNet (in a VM) or coinroute without the real modem. `--simphone CODE`
+  puts a simulated payphone behind it. See its `--help`.
 - `tools/re/ne.py` — helper for studying XNET.EXE (bring your own copy).
 - `tools/screenshots.py` — renders every screen of the app from the demo
   route to PNG files (works headless: `QT_QPA_PLATFORM=offscreen`).

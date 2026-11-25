@@ -34,7 +34,7 @@ app) are done; work continues per [docs/ROADMAP.md](docs/ROADMAP.md).
 5. When a field layout is learned or its confidence changes, update
    `FORMATS.md` (✅ verified · 🟡 probable · ❓ unknown) in the same commit.
 6. The core (`ctree`, `fields`, `scramble`, `xnet`, `importer`, `report`, `cli`,
-   `db`, `demo`, `protocol`, `simphone`) stays **standard-library only** and must not import Qt
+   `db`, `demo`, `protocol`, `simphone`, `modem`) stays **standard-library only** and must not import Qt
    (`tests/test_core_without_qt.py` checks). GUI code lives in
    `src/coinroute/gui/`.
 
@@ -52,7 +52,8 @@ src/coinroute/
   demo.py       synthetic XNET folder (make_demo) + the record builders tests use
   protocol.py   the phone link: frames, check byte, commands, Link (send/retry) -- docs/PROTOCOL.md
   simphone.py   a simulated payphone answering protocol.py, for tests and bench work
-  cli.py        coinroute import | summary | export-csv | users | demo | gui
+  modem.py      Hayes/UPMS1200 driver: reset, dial, answer, hang up; SerialLine; results -> COMM_ERRORS
+  cli.py        coinroute import | summary | export-csv | users | demo | probe | gui
   gui/          PySide6 app: mainwindow, sitesview, detail (+ chart), settingsview,
                 importdlg, workers (QThread jobs), models (row + paged table models), style
 tests/          fakexnet.py (tiny fixed folder), conftest.py (demo route fixtures); test_*.py,

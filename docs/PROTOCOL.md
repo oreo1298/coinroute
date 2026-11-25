@@ -118,6 +118,15 @@ read carries them is ❓.
 - `coinroute.protocol` — frames, check byte, a stream reader that resyncs on
   `'T'`, builders for the commands above, and `Link` (send, wait, check `'G'`,
   retry four times).
+- `coinroute.modem` — drives the UPMS1200: reset and init, dial (results mapped
+  to ExpressNet's error codes: BUSY 5, NO CARRIER 6, time-out 4), answer a
+  ring, `+++` / `ATH0`; `SerialLine` for a real port; `.link()` hands the
+  connected line to `protocol.Link`.
+- `coinroute probe NUMBER --port DEV --code N` (experimental) — dials, sends the
+  security code, reads memory and hangs up, printing the frames.
+- `tools/fake_upms.py --pty --simphone CODE` — the fake modem with a simulated
+  phone behind it, so `coinroute probe` and the coming poller can be tried end
+  to end without hardware.
 - `coinroute.simphone` — a simulated phone that answers those commands from a
   64 KB memory image, refuses reads and writes until the right security code,
   and can drop or spoil replies to exercise retries. Its choices where the real

@@ -56,6 +56,40 @@ def cmd_demo(a):
     print(f"Next: coinroute import {x} demo.db")
 
 
+def cmd_probe(a):
+    """Call one phone, send its security code, read some memory, hang up (bench tool)."""
+    from .modem import GENERIC, UPMS1200, Modem, ModemError, SerialLine
+    from .protocol import ProtocolError
+    from .xnet import comm_error_text
+
+    line = SerialLine(a.port, a.baud)
+    m = Modem(line, GENERIC if a.generic else UPMS1200)
+    try:
+        m.reset()
+        r = m.dial(a.number, timeout=a.dial_timeout)
+        if not r.connected:
+            sys.exit(f"coinroute: {r.result or 'no answer'} ({comm_error_text(r.error_code)})")
+        print(f"{r.result}")
+        link = m.link(timeout=a.reply_timeout)
+        try:
+            if a.code is not None:
+                link.security(a.code)
+                print("security code accepted")
+            addr, count = int(a.read[0], 16), int(a.read[1])
+            data = link.read_memory(addr, count)
+            print(f"{addr:04X}: {data.hex(' ')}")
+        except ProtocolError as e:
+            print(f"coinroute: {e}", file=sys.stderr)
+        finally:
+            for direction, data in link.log:
+                print(f"  {direction} {data.hex(' ')}", file=sys.stderr)
+            m.hangup()
+    except ModemError as e:
+        sys.exit(f"coinroute: modem: {e}")
+    finally:
+        line.close()
+
+
 def cmd_gui(a):
     try:
         from .gui.app import run
@@ -88,6 +122,18 @@ def main(argv=None):
     p.add_argument("outdir")
     p.add_argument("--calls", action="store_true", help="include individual call records (large)")
     p.set_defaults(func=cmd_export_csv)
+
+    p = sub.add_parser("probe", help="(experimental) call one phone through the modem and read its memory")
+    p.add_argument("number", help="phone number to dial")
+    p.add_argument("--port", required=True, help="serial device of the modem, e.g. /dev/ttyUSB0")
+    p.add_argument("--baud", type=int, default=1200)
+    p.add_argument("--generic", action="store_true", help="a generic Hayes modem (300 bps), not the UPMS1200")
+    p.add_argument("--code", type=int, help="security code value to send first (see docs/PROTOCOL.md)")
+    p.add_argument("--read", nargs=2, metavar=("ADDR", "COUNT"), default=["0FF8", "8"],
+                   help="memory to read: hex address and byte count (default 0FF8 8)")
+    p.add_argument("--dial-timeout", type=float, default=60.0)
+    p.add_argument("--reply-timeout", type=float, default=3.0)
+    p.set_defaults(func=cmd_probe)
 
     p = sub.add_parser("gui", help="start the desktop app")
     p.add_argument("db", nargs="?", help="route database to open")
