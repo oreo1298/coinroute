@@ -143,3 +143,34 @@ def test_manual_poll_from_the_terminal_version(route):
     assert "Poll complete" in t and "Send security code" in t
     app.key("ESC")
     assert not isinstance(app.stack[-1], PollScreen)
+
+
+def test_records_are_saved_then_cleared_like_expressnet(route, site):
+    ph = SimPhone(security_code="4821", phone=PHONE)
+    ph.memory[p.CDR_COUNTS:p.CDR_COUNTS + 8] = bytes([0, 2, 0, 2, 0, 3, 0, 3])
+    ph.memory[0x3000:0x3000 + 90] = bytes(range(90))
+    ph.flags[1], ph.flags[2] = 0xC0, 0xC0  # Bill CDR Full + Limit, Bill CDR Err + Audit CDR Err
+    with PollStore(route) as st:
+        out, _ = poll(ph, site, collect_records=True, clear_records=True, store=st)
+        assert out.ok, out.steps
+        st.record(site, out)
+        rows = st.con.execute("SELECT kind, count(*), min(poll_id) FROM poll_records GROUP BY kind").fetchall()
+    assert sorted(rows) == [("audit", 3, 1), ("billing", 2, 1)]       # saved once, attached to the poll
+    assert ph.cleared == [("T", bytes(2)), ("K", bytes(2))]               # rate records here hold 00 00
+    assert ph.memory[p.CDR_COUNTS:p.CDR_COUNTS + 8] == bytes(8)           # the phone's counts are empty
+    assert ph.flags[1] == 0 and ph.flags[2] == 0                          # and its CDR flags cleared
+    assert "Clear billing CDRs" in out.steps and "Clear audit CDRs" in out.steps
+
+
+def test_records_stay_in_the_phone_without_a_store(site):
+    ph = SimPhone(security_code="4821", phone=PHONE)
+    ph.memory[p.CDR_COUNTS:p.CDR_COUNTS + 8] = bytes([0, 1, 0, 1, 0, 0, 0, 0])
+    out, _ = poll(ph, site, collect_records=True, clear_records=True)  # no store: nothing safe to clear with
+    assert out.ok and len(out.billing) == 1 and not getattr(ph, "cleared", [])
+
+
+def test_clear_code_comes_from_the_rate_record():
+    rr = bytearray(36781)
+    rr[2499:2501], rr[4769:4771] = b"\x12\x34", b"\x56\x78"
+    assert p.clear_code(bytes(rr), "DD") == b"\x12\x34" and p.clear_code(bytes(rr), "CA") == b"\x56\x78"
+    assert p.clear_code(None, "DD") == bytes(2)

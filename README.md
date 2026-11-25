@@ -94,8 +94,11 @@ In the terminal version: Modems → Manual Polling, and Modems → Auto
 Polling → Stop/Restart (F2); in the desktop app: Modems → Poll now (port
 `SIM` for the simulated phone everywhere). **This has not been tried on a real phone yet**: run the
 first real polls while ExpressNet is still at hand, ideally recording the
-line with `tools/serial_tap.py`. Call records are only read with `--cdrs`
-and stay in the phone until the command that clears them is known.
+line with `tools/serial_tap.py`. Call records are collected only with
+`--cdrs`: they are saved in the route database first and then cleared from
+the phone, as ExpressNet does (`--keep-cdrs` reads them and leaves them
+there). While ExpressNet still polls the same phones, use `--keep-cdrs`, or
+neither, so ExpressNet keeps getting its records.
 
 ### Terminal version
 

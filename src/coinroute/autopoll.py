@@ -98,15 +98,17 @@ class AutoPoller:
         self.current = phone
         self.progress(f"{list_name}: polling {phone}")
         line = self.open_line()
+        st = PollStore(self.db_path)
         try:
-            opts = {"now": lambda: self.now().replace(second=0, microsecond=0), **self.poller_options}
+            opts = {"now": lambda: self.now().replace(second=0, microsecond=0), "store": st,
+                    **self.poller_options}
             out = Poller(Modem(line, self.profile), **opts).poll(site)
+            st.record(site, out)
         finally:
+            st.close()
             if hasattr(line, "close"):
                 line.close()
             self.current = ""
-        with PollStore(self.db_path) as st:
-            st.record(site, out)
         self.progress(f"{list_name}: {phone} {out.message}")
         return out.ok, out.message
 

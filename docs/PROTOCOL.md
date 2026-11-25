@@ -141,8 +141,8 @@ poll.
 | `S` | a mask over the trouble-flag bytes: 8 bytes (3 on A type phones) | 10 / 5 | **clear trouble flags**: the bits set in the mask are cleared | ✅ (below) |
 | `Q` | the 4-digit security code as two packed-BCD bytes in reading order (`1234` → `12 34`) | 4 | security code (errors 13/14 follow it) | ✅ (see below) |
 | `P` | 13 ASCII digits | 15 | set the phone's clock | ✅ layout and order: yymmdd, weekday, hhmmss (the status shows the clock the same way) |
-| `K` | two bytes | 4 | clear audit CDRs | ✅ layout |
-| `T` | two bytes | 4 | clear billing CDRs | ✅ layout |
+| `K` | two bytes from the site's rate record (below) | 4 | clear audit CDRs | ✅ |
+| `T` | the same two bytes | 4 | clear billing CDRs | ✅ |
 | `I` | — | 2 | clear coin flag on C type phones | ✅ |
 | `L`, `N`, `O` | — | 2 | end-of-call steps | 🟡 |
 | `R` | — | 2 | call-accounting step | 🟡 |
@@ -233,7 +233,11 @@ From PHBILAUD.C; addresses and sizes are ExpressNet's constants.
 4. Records are read from *base + first slot × record size*, wrapping to the
    ring's start when the run passes the last slot, **5 billing records
    (225 bytes) or 10 audit records (230 bytes) per read**, then cleared with
-   `T` (billing) / `K` (audit) and the flag masks above.
+   `T` (billing) / `K` (audit) and the flag masks above. The two bytes after
+   `T` and `K` come from the site's rate record (CALLCOST.DAT): offset 2499
+   for phones whose type starts with `D`, 4769 for the others; they are zero
+   in every rate record seen. ✅ coinroute saves the records in the database
+   before it sends the clear commands.
 
 `protocol.parse_cdr_counts`, `billing_base`, `audit_base`, `ring_reads` and
 `record_reads` implement this; `Link.cdr_counts()` reads the counts and

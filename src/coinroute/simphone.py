@@ -89,7 +89,10 @@ class SimPhone:
             for i, m in enumerate(args):
                 self.flags[i] &= ~m & 0xFF
             return bytes([ACK])
-        if letter in "KT" and len(args) == 2:
+        if letter in "KT" and len(args) == 2:  # clear billing (T) or audit (K) records: counts back to 0
+            at = 0x0FF8 + (0 if letter == "T" else 4)
+            self.memory[at:at + 4] = bytes(4)
+            self.cleared = getattr(self, "cleared", []) + [(letter, bytes(args))]
             return bytes([ACK])
         return bytes([NAK])
 

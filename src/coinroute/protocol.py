@@ -298,6 +298,19 @@ def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, fl
 # its argument bytes), so it starts at body byte 4 after 'D' and byte 5 after 'X'.
 READ_DATA = {ord("D"): 4, ord("X"): 5}
 
+# The two bytes sent with 'T' (clear billing records) and 'K' (clear audit records) come from the
+# site's rate record (PARAM/CALLCOST.DAT): offset 2499 for phones whose type starts with 'D',
+# 4769 for the others. Zero in every rate record seen.
+CLEAR_CODE_OFFSETS = {"D": 2499, "": 4769}
+
+
+def clear_code(rate_record: bytes | None, phone_type: str) -> bytes:
+    off = CLEAR_CODE_OFFSETS["D" if phone_type.startswith("D") else ""]
+    if not rate_record or len(rate_record) < off + 2:
+        return bytes(2)
+    return bytes(rate_record[off:off + 2])
+
+
 CDR_COUNTS = 0x0FF8           # 8 bytes: billing (first, count) twice, then audit (first, count) twice
 BILLING_RECORD, BILLING_SLOTS, BILLING_PER_READ = 45, 52, 5    # ring of 52 x 45 bytes, 5 per read
 AUDIT_RECORD, AUDIT_SLOTS, AUDIT_PER_READ = 23, 125, 10        # ring of 125 x 23 bytes, 10 per read
