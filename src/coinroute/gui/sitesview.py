@@ -253,7 +253,7 @@ class SitesView(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search phone, description, city…")
         self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(260)
+        self.search.setMinimumWidth(180)
         self.search.textChanged.connect(lambda t: self._filter(text=t))
 
         self.group = QComboBox()
@@ -305,11 +305,11 @@ class SitesView(QWidget):
             self.chips[kind] = b
             chips.addWidget(b)
         self.chips[None].setChecked(True)
-        chips.addSpacing(12)
+        chips.addStretch(1)
         self.totals = QLabel()
         self.totals.setWordWrap(True)  # one long line would set the whole view's minimum width
         self.totals.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        chips.addWidget(self.totals, 1)
+        # the totals get their own line, so the header never sets a wide minimum for the window
 
         self.table = QTableView()
         self.table.setModel(self.proxy)
@@ -343,6 +343,7 @@ class SitesView(QWidget):
         lay.setContentsMargins(10, 10, 10, 6)
         lay.addLayout(bar)
         lay.addLayout(chips)
+        lay.addWidget(self.totals)
         lay.addWidget(self.table, 1)
         lay.addWidget(self.empty)
         self._update_chips()

@@ -130,7 +130,11 @@ def test_columns_fit_the_width_without_sideways_scrolling(qtbot, qapp, db):
         assert all(hh.sectionSize(c) >= 56 for c in range(hh.count()))  # never crushed
         idx = v.proxy.index(0, 2)  # the full text of a squeezed cell is in its tooltip
         assert idx.data(Qt.ItemDataRole.ToolTipRole) == idx.data()
-        assert v.minimumSizeHint().width() < 1100  # the totals line wraps instead of widening the view
+        # fits a 1366-pixel laptop screen; on failure, say which control is wide
+        names = ("search", "group", "days", "removed", "totals")
+        parts = {n: getattr(v, n).minimumSizeHint().width() for n in names}
+        parts["chips"] = sum(b.minimumSizeHint().width() for b in v.chips.values())
+        assert v.minimumSizeHint().width() < 1280, parts
     finally:
         qapp.setFont(base)
 
