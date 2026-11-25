@@ -55,12 +55,15 @@ src/coinroute/
   simphone.py   a simulated payphone answering protocol.py, for tests and bench work
   modem.py      Hayes/UPMS1200 driver: reset, dial, answer, hang up; SerialLine; results -> COMM_ERRORS
   cli.py        coinroute import | summary | export-csv | users | demo | report | probe | gui
+  tui/          terminal version laid out like ExpressNet: canvas (curses / text), widgets
+                (menu, table, form, prompt), app (screen stack, key bar), screens (the menu tree)
   gui/          PySide6 app: mainwindow, sitesview, detail (+ chart), settingsview,
                 importdlg, workers (QThread jobs), models (row + paged table models), style
 tests/          fakexnet.py (tiny fixed folder), conftest.py (demo route fixtures); test_*.py,
                 test_gui_*.py need pytest-qt
 tools/fake_upms.py   stand-in UPMS1200 modem (serial or pty) for bench tests
 tools/screenshots.py renders every GUI screen from the demo route to PNG
+tools/tui_shots.py   renders the terminal screens to PNG (key sequences in SHOTS; add new screens)
 tools/serial_tap.py  logs the bytes between ExpressNet and the UPMS1200 (both ways); --decode shows frames
 tools/re/ne.py       NE-executable helper for studying XNET.EXE (never commit the EXE)
 FORMATS.md           every known file layout, with confidence marks
@@ -78,6 +81,7 @@ QT_QPA_PLATFORM=offscreen pytest -q            # GUI tests in a headless session
 COINROUTE_REAL_XNET=/path/to/XNET pytest -q    # extra checks; only where real data exists
 PYTHONPATH=src python -m coinroute --help
 coinroute demo /tmp/d && coinroute import /tmp/d/XNET /tmp/d.db && coinroute gui /tmp/d.db
+coinroute tui /tmp/d.db                        # terminal version (Windows: pip install '.[tui]')
 ```
 
 If Qt fails to load in a fresh container (`libEGL.so.1: cannot open shared

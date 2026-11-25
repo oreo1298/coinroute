@@ -67,6 +67,28 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+### Terminal version
+
+For anyone who knows ExpressNet's screens: the same numbered menus, the same
+blue screen, a description of the highlighted item above a key bar, in any
+terminal window (80x24 or larger) on Linux, macOS or Windows.
+
+```sh
+pip install -e '.[tui]'               # on Windows this adds windows-curses; elsewhere curses is built in
+coinroute tui route.db
+```
+
+Press a menu item's number or move with the arrow keys and ENTER; ESC goes
+back; F-keys on a screen are listed in the key bar. **1** looks up a site
+(type to search), **4** runs the Coin and Trouble reports (F2 saves them as
+text), **5** shows ports, polling lists and every failed call, **7** opens a
+route or imports an ExpressNet folder. Items coinroute can't do yet stay in
+their usual place and say so.
+
+![Main menu](docs/screenshots/tui-main-menu.png)
+![Site record](docs/screenshots/tui-site-record.png)
+![Trouble report](docs/screenshots/tui-trouble-report.png)
+
 ### Try it without real data
 
 ```sh

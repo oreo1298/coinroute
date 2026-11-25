@@ -104,6 +104,17 @@ Later (not required for M2): PyInstaller build for Windows; printable reports
 
 ---
 
+## Milestone 2b — terminal version ✅ (first cut)
+
+`coinroute tui`: ExpressNet's menu tree (main menu 1–7 and 0, and the
+reports, modems, auto-polling, system and file utilities submenus) in a curses
+terminal app with the DOS look, over the same data module as the GUI. Site
+lookup and records, coin history, failures, options, ports, poll lists,
+logins, Coin and Trouble reports as text (F2 saves), coin collections, open
+or import a route. Entries that need features not built yet (editing, rate
+tables, auto polling) stay in their place and say so. Next: manual polling
+from Modems → Manual Polling once the poller exists (Milestone 5).
+
 ## Milestone 3 — decode the remaining fields
 
 Needs real data to verify, so this is done on Andrew's machine

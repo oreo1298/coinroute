@@ -113,6 +113,16 @@ def cmd_probe(a):
         line.close()
 
 
+def cmd_tui(a):
+    try:
+        import curses  # noqa: F401
+    except ImportError:
+        sys.exit("coinroute: the terminal version needs curses; on Windows: pip install windows-curses")
+    from .tui.screens import run
+
+    return run(a.db)
+
+
 def cmd_gui(a):
     try:
         from .gui.app import run
@@ -167,6 +177,10 @@ def main(argv=None):
     p.add_argument("--dial-timeout", type=float, default=60.0)
     p.add_argument("--reply-timeout", type=float, default=3.0)
     p.set_defaults(func=cmd_probe)
+
+    p = sub.add_parser("tui", help="start the terminal version (menus like ExpressNet's)")
+    p.add_argument("db", nargs="?", help="route database to open (made by `coinroute import`)")
+    p.set_defaults(func=cmd_tui)
 
     p = sub.add_parser("gui", help="start the desktop app")
     p.add_argument("db", nargs="?", help="route database to open")

@@ -25,6 +25,7 @@ from .xnet import (
     options_fields,
     poll_list_days,
     port_settings,
+    site_security_code,
 )
 
 FMT = "%Y-%m-%d %H:%M"
@@ -227,7 +228,7 @@ class RouteDB:
                 return None
             s = {"phone": phone, "group_no": h["group_no"], "site_no": h["site_no"], "removed": True}
         else:
-            s.pop("raw", None)
+            s["security_code"] = site_security_code(s.pop("raw", None) or b"")
             s["removed"] = False
             s["rate_record_found"] = bool(
                 self._one("SELECT 1 x FROM rate_records WHERE name=?", s["rate_record"])
@@ -312,6 +313,31 @@ class RouteDB:
     def comm_errors_page(self, phone: str, after=None, limit: int = 200) -> list[dict]:
         """A page of a phone's communication errors, newest first."""
         return self._page("comm_errors", "id, at, code, message", "at", "phone=?", [phone], after, limit)
+
+    def failures_page(self, after=None, limit: int = 200) -> list[dict]:
+        """Communication errors of every phone, newest first, with the site's description."""
+        rows = self._page("comm_errors", "id, phone, group_no, at, code, message", "at", "1=1", [], after, limit)
+        desc = dict(self.con.execute("SELECT phone, description FROM sites").fetchall())
+        for r in rows:
+            r["description"] = desc.get(r["phone"], "")
+            r["phone_display"] = phone_display(r["phone"])
+        return rows
+
+    def collections(self, start: str, end: str) -> list[dict]:
+        """Polls between start and end that found the coin box emptied, with the amount taken out."""
+        sites = {r["phone"]: r for r in self._all("SELECT phone, description, group_no FROM sites")}
+        out = []
+        for phone, polls in self._polls_between(start, end).items():
+            for r in polls:
+                if "E$" in r.get("flags", []):
+                    site = sites.get(phone, {})
+                    out.append({
+                        "phone": phone, "phone_display": phone_display(phone),
+                        "group_no": site.get("group_no", ""), "description": site.get("description", ""),
+                        "at": r["at"], "collected_cents": r.get("amount_collected_cents"),
+                        "cash_box_cents": r["cash_box_cents"],
+                    })
+        return sorted(out, key=lambda r: (r["at"], r["phone"]), reverse=True)
 
     def comm_error_counts(self, phone: str) -> list[dict]:
         """How often each failure happened for a phone, with first and last time."""
