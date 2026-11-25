@@ -38,7 +38,7 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
     for fd in (pc_s, mo_s):
         tty.setraw(fd)
     log_path = tmp_path / "poll.log"
-    log = open(log_path, "w")
+    log = open(log_path, "w", encoding="ascii")
     t = threading.Thread(target=tap.tap, args=(pc_m, mo_m, log, True), daemon=True)
     t.start()
 
@@ -57,7 +57,7 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
         os.close(fd)
     t.join(3)
     log.close()
-    text = log_path.read_text()
+    text = log_path.read_text(encoding="ascii")
     assert "PC>MODEM" in text and "MODEM>PC" in text
 
     out = io.StringIO()

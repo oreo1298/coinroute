@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+pytest.importorskip("fcntl", reason="the fake modem (tools/fake_upms.py) is POSIX-only")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import fake_upms as fu  # noqa: E402
 

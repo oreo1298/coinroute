@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0
+      - name: Install
+        run: python -m pip install -e ".[gui]" pytest pytest-qt
+      - name: Test
+        run: python -m pytest -q
+      - name: Core works without Qt
+        run: python -c "import sys; sys.modules['PySide6'] = None; import coinroute.cli, coinroute.db, coinroute.protocol, coinroute.modem; print('ok')"
+
+  windows-build:
+    name: Windows build
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install -e ".[gui]" "pyinstaller>=6.10"
+      - name: Build
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --name coinroute-gui `
+            --paths src --collect-submodules coinroute packaging/coinroute_gui.py
+          pyinstaller --noconfirm --clean --onedir --console --name coinroute `
+            --paths src --collect-submodules coinroute packaging/coinroute_cli.py
+          # one folder: the GUI's, plus the console program beside it
+          Copy-Item dist/coinroute/coinroute.exe dist/coinroute-gui/
+          Copy-Item README.md dist/coinroute-gui/README.md
+      - name: Smoke test
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          $exe = "dist/coinroute-gui/coinroute.exe"
+          & $exe --version
+          & $exe demo "$env:RUNNER_TEMP/demo"
+          & $exe import "$env:RUNNER_TEMP/demo/XNET" "$env:RUNNER_TEMP/demo.db"
+          & $exe summary "$env:RUNNER_TEMP/demo.db"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: coinroute-windows
+          path: dist/coinroute-gui/
+          retention-days: 30
