@@ -209,3 +209,35 @@ def test_import_progress_reports_each_file_and_can_cancel(tmp_path):
     with pytest.raises(Stop):
         import_xnet(tmp_path / "XNET", tmp_path / "b.db", progress=stop_at_coins)
     assert not (tmp_path / "b.db").exists()                 # partial database removed
+
+
+# --- Milestone 3 decodes (layouts from ExpressNet's own report/export tables) ---------------
+
+def test_trouble_flags_decode():
+    r = bytearray(fx.coin("7145550101", dt.datetime(2026, 5, 1, 1, 0), 1000, 0))
+    assert xnet.trouble_flags(bytes(r)) == []
+    r[48] |= 0x01          # cash emptied
+    r[53] |= 0x08 | 0x04   # relay collect, relay refund
+    r[48] |= 0x40          # relay jam
+    r[56] |= 0x01          # failed comms lives in the 'PFlags' byte
+    assert set(xnet.trouble_flags(bytes(r))) == {"E$", "RC", "RR", "RJ", "FC"}
+    assert len(xnet.TROUBLE_FLAGS) == 45 and xnet.TROUBLE_NAMES["DI"] == "Dial Inactive"
+    built = fx.coin("7145550101", dt.datetime(2026, 5, 1, 1, 0), 1000, 0, flags=["HO", "E$"], audit_records=7,
+                    collected=1250)
+    extras = xnet.coin_extras(built)
+    assert set(extras["flags"]) == {"HO", "E$"}
+    assert extras["audit_records"] == extras["audit_collected"] == 7
+    assert extras["amount_collected_cents"] == 1250
+
+
+def test_call_detail_and_accounting_decode():
+    d = xnet.call_detail(bytes.fromhex("3c000000 32000000 32000000 01 00 03 00"))
+    assert d == {"duration_s": 60, "charged_cents": 50, "collected_cents": 50, "cost_band": 1, "route": 3}
+    assert xnet.call_detail(None)["duration_s"] is None
+    assert len(xnet.CALL_CATEGORIES) == 83
+    assert xnet.CALL_CATEGORIES[17] == "911" and xnet.CALL_CATEGORIES[34] == "(1)800-NXX-XXXX"
+    rec = fx.callacct("7145550101", dt.datetime(2026, 5, 1, 1, 0), dt.date(2026, 4, 30), dt.date(2026, 5, 1),
+                      {0: (12, 240, 21), 17: (1, 0, 2)})
+    cats = xnet.call_accounting_counters(rec)
+    assert [(c["category"], c["calls"], c["money_cents"], c["minutes"]) for c in cats] == [
+        ("Local Coin", 12, 240, 21), ("911", 1, 0, 2)]

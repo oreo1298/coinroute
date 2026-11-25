@@ -50,9 +50,73 @@ Text dates appear as `yymmdd` (CDR files), `yyyymmdd` (audit CDRs) and
 | Off | Size | Field | |
 |---|---|---|---|
 | 0–43 | | common header | ✅ |
-| 56 | 8 | status bytes (trouble flags?) | ❓ |
+| 44 | u8 | billing records the phone held ("Bill RCnt.") | 🟡 name from ExpressNet's coin export; almost always 0 |
+| 45 | u8 | audit records the phone held ("Aud RCnt.") | 🟡 |
+| 46 | u8 | billing records collected ("B RCol.") | 🟡 |
+| 47 | u8 | audit records collected ("A RCol.") | 🟡 |
+| 48 | 8 | trouble flags ("CFlags"), table below | ✅ |
+| 56 | 8 | more flags ("PFlags"): byte 56 holds FC (0x01) and CT (0x02); the rest ❓ | 🟡 |
 | 64 | u32 | lifetime coin total, cents | ✅ matches printed Coin Report |
 | 68 | u32 | cash currently in box, cents | ✅ matches "In Box" column |
+| 72 | u32 | amount taken out when the box was emptied, cents ("Amt. Col.") | ✅ non-zero only on polls with the E$ flag (299 of 299 in a real installation) |
+| 76 | u32 | amount entered by hand ("Amt. Man.") | 🟡 rarely non-zero |
+| 80 | 8 | always zero in real data | |
+
+### Trouble flags ✅
+
+Each flag is one bit. The mapping is ExpressNet's own: its trouble report tests
+these bits (it keeps a table of byte/mask pairs in the order of the flag names),
+and its printed trouble reports agree. RC, RJ, RR, DI and FC were checked against
+84 printed report lines; E$ is set on 90 % of polls where the box went down and on
+0.1 % of the others. Which flags a printed report shows is a per-report choice.
+
+| Byte | Mask | Code | Meaning |
+|---|---|---|---|
+| 48 | 0x01 | E$ | Cash Emptied |
+| 48 | 0x02 | ST | Status Check |
+| 48 | 0x04 | PR | Phone Repair |
+| 48 | 0x08 | PC | Peg Count |
+| 48 | 0x10 | $V | Cash Vol Full |
+| 48 | 0x20 | RE | Ram Error |
+| 48 | 0x40 | RJ | Relay Jam |
+| 48 | 0x80 | LR | Loop Reversed |
+| 49 | 0x01 | VE | Cash Vol Err |
+| 49 | 0x02 | $E | Coin Tot Err |
+| 49 | 0x04 | TE | Reset Tot Err |
+| 49 | 0x08 | BE | Box Amt Err |
+| 49 | 0x10 | OE | Overage Err |
+| 49 | 0x20 | AE | Call Acct Err |
+| 49 | 0x40 | CL | Bill CDR Limit |
+| 49 | 0x80 | CF | Bill CDR Full |
+| 50 | 0x02 | $F | Coin Box Full |
+| 50 | 0x04 | CG | Coin Gate Fail |
+| 50 | 0x08 | DE | Defect Escrow |
+| 50 | 0x10 | ME | Coin Mech Err |
+| 50 | 0x20 | TR | Time Report |
+| 50 | 0x40 | NE | Audit CDR Err |
+| 50 | 0x80 | CE | Bill CDR Err |
+| 51 | 0x01 | LB | Low Battery |
+| 51 | 0x10 | HO | Handset OffHk |
+| 51 | 0x40 | LA | Lower Alarm |
+| 51 | 0x80 | HG | Handset Gone |
+| 52 | 0x01 | NF | Audit CDR Full |
+| 52 | 0x10 | BG | Bad Ground |
+| 52 | 0x20 | CR | Clock Reset |
+| 52 | 0x40 | EE | Download Error |
+| 52 | 0x80 | TG | Trouble Gone |
+| 53 | 0x01 | OC | Opto-Coupler |
+| 53 | 0x02 | BR | Box Removed |
+| 53 | 0x04 | RR | Relay Refund |
+| 53 | 0x08 | RC | Relay Collect |
+| 53 | 0x10 | SN | Silicon Ser # |
+| 53 | 0x20 | BM | Box Missing |
+| 53 | 0x40 | DI | Dial Inactive |
+| 53 | 0x80 | SU | Sig. Unit Bad |
+| 54 | 0x01 | CB | CTB rate bad |
+| 54 | 0x02 | AC | ASIC clk fail |
+| 54 | 0x80 | TB | Temp Brd fail |
+| 56 | 0x01 | FC | Failed Comms |
+| 56 | 0x02 | CT | Coin Tot Fix |
 
 ## CDR/COMMERR.DAT — 130 bytes, one per failed call to a phone
 
@@ -63,15 +127,28 @@ Only failures are logged: a real installation (~290k records) has no code-0
 |---|---|---|---|
 | 0–43 | | common header | ✅ |
 | 44 | 1 | result code: index into the 115-entry message list in `xnet.COMM_ERRORS` (4 = "Time-out on carrier detect", 5 = "BUSY detected", 8 = "Sync char not detected" …) | ✅ (list order confirmed by entry 100 = "100 Not presently used") |
+| 45–129 | | all zero in a real installation; ExpressNet's export lists a "Port" column | ❓ |
 
 ## CDR/CALLACCT.DAT — 552 bytes, call counters per period
 
 | Off | Size | Field | |
 |---|---|---|---|
 | 1, 8, 17, 28 | | group, site no, phone, timestamp (as common header) | ✅ |
-| 32 | 7 | period start `yymmdd` | 🟡 |
+| 32 | 7 | period start `yymmdd` | ✅ ExpressNet's export reads it as the start date |
 | 39 | 7 | period end `yymmdd` | 🟡 |
-| 46– | | counters by call category (local coin, intra/inter LATA, speed dials, card groups, reroutes …) | ❓ |
+| 46 + 6·*i* | 3 × u16 | category *i* (0–82): calls ("Peg Count"), money in cents, minutes | ✅ |
+| 544 | 6 | three u16, often near 0x5555; ExpressNet's export also has "Overage" and "Rec. No." columns | ❓ |
+| 550 | u16 | small numbers (record number?) | ❓ |
+
+The 83 categories, in order (`xnet.CALL_CATEGORIES`): Local Coin; IntraState
+IntraLata, IntraState InterLata, InterState IntraLata, InterState InterLata Coin;
+Local Non Coin; the same four Non Coin; 211, 311 … 911; Incoming Call; Speed Dial
+\*81–\*89, \*80, \*91, \*92; (1)555-XXXX; (1)NPA-555-XXXX; 10XXX; (1)800-NXX-XXXX;
+PBX; Free Number; 950-XXXX; 0-; 00; 0+7; 0+10; Country Code #1–#9 and Dft; Card
+Group 1–15; \*1 - \*7; ReRoute #1–15. (ExpressNet's own labels have two typos,
+"IntrerLata" and a second "Local Coin" where Local Non Coin is meant.) Checked over
+a real installation: 911, non-coin and incoming calls carry no money, local coin
+calls average 14¢, toll-free calls carry minutes but no money.
 
 ## CDR/AUDITCDR.DAT — variable length, one poll's batch of calls
 
@@ -83,7 +160,17 @@ Only failures are logged: a real installation (~290k records) has no code-0
 | 42 + 47·k | 47 | call entry *k* | |
 
 Call entry: `dialed[17]` ✅, `date yyyymmdd[9]` ✅, `time hhmm[5]` ✅, then 16
-bytes of detail ❓ (probably duration, amounts, call type).
+bytes of detail, named after the columns of ExpressNet's audit export:
+
+| Off in entry | Size | Field | |
+|---|---|---|---|
+| 31 | u32 | duration, seconds | ✅ ExpressNet's audit report prints it as "%lu sec" |
+| 35 | u32 | amount charged, cents ("Amt. Chg.") | ✅ values 0 / 50 / 100 / 200 … |
+| 39 | u32 | amount collected, cents ("Amt. Col.") | ✅ |
+| 43 | u8 | cost band | 🟡 |
+| 44 | u8 | always 0 | |
+| 45 | u8 | route type ("Route") | 🟡 mostly 3; 0 for 911 / free calls |
+| 46 | u8 | always 0 | |
 
 ## SITES/SITES.DAT — 2456 bytes, one per payphone
 

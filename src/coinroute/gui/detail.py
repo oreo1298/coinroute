@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPlainTextEdit,
     QScrollArea,
     QSplitter,
     QTableView,
@@ -31,9 +30,20 @@ from ..db import RouteDB, status_of
 from ..fields import phone_display
 from .chart import CoinChart
 from .models import RIGHT, Column, PagedModel, RowsModel
-from .style import count, css, money, mono_font, muted_css, status_colors, status_text
+from .style import (
+    count,
+    css,
+    duration,
+    flag_codes,
+    flag_names,
+    money,
+    muted_css,
+    status_colors,
+    status_text,
+)
 
 CALL_PAGE = 200
+NATURAL = -1  # make_table(stretch=NATURAL): no column stretches
 
 
 def _dash(v):
@@ -53,7 +63,9 @@ def make_table(model, *, sortable: bool = False, stretch: int | None = None) -> 
     t.verticalHeader().hide()
     t.verticalHeader().setDefaultSectionSize(t.fontMetrics().height() + 10)
     t.horizontalHeader().setHighlightSections(False)
-    if stretch is not None:
+    if stretch == NATURAL:  # numbers: keep natural widths rather than strand them at the far right
+        t.horizontalHeader().setStretchLastSection(False)
+    elif stretch is not None:
         t.horizontalHeader().setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
     else:
         t.horizontalHeader().setStretchLastSection(True)
@@ -286,9 +298,16 @@ class CoinPollsTab(QWidget):
                     "Box emptied",
                     "collected_cents",
                     lambda v: "" if v is None else f"yes — {money(v)} taken out",
-                    tip="The box held less than at the previous poll; estimated amount taken out",
+                    tip="The amount the phone reported taking out when the box was emptied; for older "
+                    "polls without it, an estimate from the box and lifetime totals",
                 ),
-                Column("Status bytes", "status_bytes", mono=True, tip="Not decoded yet (FORMATS.md ❓)"),
+                Column(
+                    "Flags",
+                    "flags",
+                    flag_codes,
+                    tip="Trouble flags the phone reported at this poll (hover a cell for their names)",
+                    cell_tip=flag_names,
+                ),
             ],
             rows,
         )
@@ -377,7 +396,7 @@ class CallsTab(QWidget):
         today = QDate.currentDate()
         lo = QDate.fromString(first or "", "yyyy-MM-dd")
         hi = QDate.fromString(last or "", "yyyy-MM-dd")
-        lo = lo if lo.isValid() else today           # damaged call dates can be unparseable
+        lo = lo if lo.isValid() else today  # damaged call dates can be unparseable
         hi = hi if hi.isValid() else today
         self.date_from.setDate(hi.addDays(-30) if hi.addDays(-30) > lo else lo)
         self.date_to.setDate(hi)
@@ -404,16 +423,15 @@ class CallsTab(QWidget):
                 Column("Date", "call_date", _dash),
                 Column("Time", "call_time", _dash),
                 Column("Dialed", "dialed", mono=True),
-                Column(
-                    "Detail (16 bytes, not decoded yet)",
-                    "detail_hex",
-                    mono=True,
-                    tip="The last 16 bytes of each call entry; meaning not mapped yet (FORMATS.md ❓)",
-                ),
+                Column("Duration", "duration_s", duration, RIGHT, "Minutes:seconds"),
+                Column("Charged", "charged_cents", money, RIGHT, "Amount the call cost"),
+                Column("Collected", "collected_cents", money, RIGHT, "Coins the phone collected for it"),
+                Column("Cost band", "cost_band", align=RIGHT, tip="Rate band from the rate table"),
+                Column("Route", "route", align=RIGHT, tip="Route type the phone chose for the call"),
             ],
             page_size=CALL_PAGE,
         )
-        self.table = make_table(self.model, stretch=3)
+        self.table = make_table(self.model, stretch=NATURAL)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.addLayout(bar)
@@ -447,6 +465,8 @@ class CallsTab(QWidget):
 
 
 class CallAccountingTab(QWidget):
+    """Call-accounting periods with their totals; the selected period's categories below."""
+
     def __init__(self, rows: list[dict]):
         super().__init__()
         self.model = RowsModel(
@@ -454,29 +474,41 @@ class CallAccountingTab(QWidget):
                 Column("Polled", "at", _dash),
                 Column("Period start", "period_start", _dash),
                 Column("Period end", "period_end", _dash),
-                Column("Non-zero bytes", "nonzero_bytes", count, RIGHT),
-                Column("Counters (raw hex from byte 46)", "counters_hex", mono=True),
+                Column("Calls", "calls", count, RIGHT),
+                Column("Money", "money_cents", money, RIGHT),
+                Column("Minutes", "minutes", count, RIGHT),
             ],
             rows,
         )
-        self.table = make_table(self.model, stretch=4)
+        self.table = make_table(self.model, stretch=NATURAL)
         fit_columns(self.table)
-        self.dump = QPlainTextEdit()
-        self.dump.setReadOnly(True)
-        self.dump.setFont(mono_font())
-        self.dump.setPlaceholderText("Select a period to see its counter bytes.")
+        self.cats = RowsModel(
+            [
+                Column("Category", "category"),
+                Column("Calls", "calls", count, RIGHT),
+                Column("Money", "money_cents", money, RIGHT),
+                Column("Minutes", "minutes", count, RIGHT),
+            ]
+        )
+        self.cat_table = make_table(self.cats, stretch=NATURAL)
+        self.cat_label = QLabel("Select a period to see its call categories.")
         self.table.selectionModel().currentRowChanged.connect(self._show)
+        lower = QWidget()
+        lv = QVBoxLayout(lower)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.addWidget(self.cat_label)
+        lv.addWidget(self.cat_table)
         split = QSplitter(Qt.Orientation.Vertical)
         split.addWidget(self.table)
-        split.addWidget(self.dump)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
+        split.addWidget(lower)
+        split.setStretchFactor(0, 2)
+        split.setStretchFactor(1, 3)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.addWidget(
             note(
-                "The call counters (local coin, intra/inter LATA, speed dials, card groups …) are not "
-                "decoded yet, so they are shown as raw bytes for now."
+                "Counters the phone keeps per kind of call, collected at polls. Money is what the calls "
+                "cost; minutes are talk time."
             )
         )
         lay.addWidget(split, 1)
@@ -485,17 +517,17 @@ class CallAccountingTab(QWidget):
 
     def _show(self, cur, _prev) -> None:
         if not cur.isValid():
-            self.dump.clear()
+            self.cats.set_rows([])
             return
         r = self.model.rows[cur.row()]
-        data = bytes.fromhex(r["counters_hex"].replace(" ", "")) if r["counters_hex"] else b""
-        lines = [f"Period {r['period_start']} to {r['period_end']} (polled {r['at']})", ""]
-        for off in range(0, len(data), 16):
-            chunk = data[off : off + 16]
-            lines.append(f"{46 + off:4d}  " + " ".join(f"{b:02x}" for b in chunk))
-        if not data:
-            lines.append("(all zero)")
-        self.dump.setPlainText("\n".join(lines))
+        self.cats.set_rows(r["categories"])
+        fit_columns(self.cat_table)
+        self.cat_label.setText(
+            f"<b>{r['period_start'] or '?'} to {r['period_end'] or '?'}</b> — {r['calls']:,} calls in "
+            f"{len(r['categories'])} categor{'y' if len(r['categories']) == 1 else 'ies'}"
+            if r["categories"]
+            else "No calls counted in this period."
+        )
 
 
 class SiteDetail(QWidget):

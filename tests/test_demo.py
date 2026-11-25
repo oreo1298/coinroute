@@ -77,3 +77,20 @@ def test_cli_demo_then_import(tmp_path, capsys):
     assert "(site record deleted)" in capsys.readouterr().out
     with pytest.raises(SystemExit, match="already exists"):
         main(["demo", str(tmp_path / "d")])
+
+
+def test_demo_trouble_flags_and_amounts(demo_db):
+    from coinroute.db import RouteDB
+
+    with RouteDB(demo_db) as db:
+        sites = db.site_summary()["sites"]
+        assert any({"RJ", "RC"} <= set(r["flags"]) for r in sites)  # the phone with a relay fault
+        phone = next(r["phone_digits"] for r in sites if r["status_kind"] == "ok")
+        polls = db.coin_polls(phone)
+        emptied = [p for p in polls if "E$" in p["flags"]]
+        assert emptied and all(p["amount_collected_cents"] > 0 for p in emptied)
+        assert all(p["collected_cents"] == p["amount_collected_cents"] for p in emptied)
+        calls = db.calls_page(phone, limit=50)
+        assert all(c["duration_s"] and c["charged_cents"] is not None for c in calls)
+        cats = [c for r in db.call_accounting(phone) for c in r["categories"]]
+        assert any(c["category"] == "Local Coin" and c["money_cents"] == 50 * c["calls"] for c in cats)

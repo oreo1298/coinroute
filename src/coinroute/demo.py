@@ -21,6 +21,10 @@ from pathlib import Path
 
 from .fields import datetime_to_minutes
 from .scramble import KEY_SALT_OFFSET, PW_OFFSET, encode_password, password_key, scramble_syspar
+from .xnet import CALL_CATEGORIES, TROUBLE_FLAGS
+
+FLAG_BITS = {code: (off, mask) for code, _, off, mask in TROUBLE_FLAGS}
+CATEGORY = {name: i for i, name in enumerate(CALL_CATEGORIES)}
 
 DEMO_END = dt.datetime(2026, 5, 2, 1, 5)  # the last nightly poll run in the demo data
 
@@ -92,12 +96,20 @@ def coin(
     total: int,
     box: int,
     status: bytes = bytes.fromhex("0001006000020000"),
+    flags=(),
+    audit_records: int = 0,
+    collected: int = 0,
     **kw,
 ) -> bytes:
-    """CDR/COIN.DAT record: lifetime coin total and cash in box, in cents."""
+    """CDR/COIN.DAT record: lifetime coin total and cash in box (cents), trouble flags by code
+    (e.g. ['E$']), audit records collected, and the amount taken out when the box was emptied."""
     r = cdr_header(88, phone, when, **kw)
+    r[45] = r[47] = min(255, audit_records)
     r[56:64] = status
-    struct.pack_into("<II", r, 64, total, box)
+    for code in flags:
+        off, mask = FLAG_BITS[code]
+        r[off] |= mask
+    struct.pack_into("<III", r, 64, total, box, collected)
     return bytes(r)
 
 
@@ -113,17 +125,25 @@ def callacct(
     when: dt.datetime,
     start: dt.date,
     end: dt.date,
-    counters: list[int],
+    counters: dict,
     group: str = "000100",
     site: str = "100",
 ) -> bytes:
-    """CDR/CALLACCT.DAT record. The counter layout from offset 46 is invented (it is still ❓)."""
+    """CDR/CALLACCT.DAT record. `counters` maps a category index (xnet.CALL_CATEGORIES) to
+    (calls, money in cents, minutes)."""
     r = cdr_header(552, phone, when, group=group, site=site)
     put(r, 32, start.strftime("%y%m%d"), 7)
     put(r, 39, end.strftime("%y%m%d"), 7)
-    for k, n in enumerate(counters[: (552 - 48) // 2]):
-        struct.pack_into("<H", r, 48 + 2 * k, n)
+    for i, (calls, money, minutes) in counters.items():
+        struct.pack_into("<HHH", r, 46 + 6 * i, min(calls, 65535), min(money, 65535), min(minutes, 65535))
     return bytes(r)
+
+
+def call_detail_bytes(
+    duration_s: int, charged: int, collected: int, cost_band: int = 0, route: int = 0
+) -> bytes:
+    """The 16 bytes after date/time in an audit call entry (see FORMATS.md)."""
+    return struct.pack("<IIIBBBB", duration_s, charged, collected, cost_band, 0, route, 0)
 
 
 def audit(
@@ -131,9 +151,7 @@ def audit(
 ) -> bytes:
     """CDR/AUDITCDR.DAT record: one poll's batch of calls.
 
-    `calls` holds (dialed, datetime) or (dialed, datetime, detail16). The 16 detail
-    bytes are still undecoded in real data; the demo puts duration / charge /
-    deposit / type there only so the column isn't empty.
+    `calls` holds (dialed, datetime) or (dialed, datetime, detail16); see call_detail_bytes.
     """
     r = bytearray(42)
     put(r, 1, group, 7)
@@ -148,7 +166,7 @@ def audit(
         put(e, 0, dialed.ljust(16), 17)
         put(e, 17, t.strftime("%Y%m%d"), 9)
         put(e, 26, t.strftime("%H%M"), 5)
-        e[31:47] = c[2] if len(c) > 2 else struct.pack("<IIII", 60, 50, 50, 1)
+        e[31:47] = c[2] if len(c) > 2 else call_detail_bytes(60, 50, 50, cost_band=1)
         r += e
     return bytes(r + extra)
 
@@ -326,7 +344,11 @@ class _Site:
     next_collect: dt.datetime | None = None
     pending: list = field(default_factory=list)  # calls not yet collected by a poll
     ca_next: dt.datetime | None = None
-    ca_counts: list = field(default_factory=lambda: [0] * 12)
+    ca_counts: dict = field(default_factory=dict)  # category index -> [calls, money, minutes]
+    taken: int = 0  # emptied from the box since the last good poll
+    ca_since: dt.date | None = None  # start of the current call-accounting period
+    trouble: str = ""  # "relay": a relay fault from trouble_from on; "handset": now and then off-hook
+    trouble_from: dt.datetime | None = None
 
 
 def _poisson(rng: random.Random, lam: float) -> int:
@@ -350,17 +372,20 @@ def _kinds(n: int) -> list[str]:
     return kinds[:n]
 
 
-def _dialed(rng: random.Random, area: str) -> tuple[str, int, int]:
-    """A synthetic dialed number, its call type and the coins it took (cents)."""
+def _dialed(rng: random.Random, area: str) -> tuple[str, int, int, int, int]:
+    """A synthetic call: dialed number, call-accounting category, cents, cost band, route type."""
     x = rng.random()
     if x < 0.62:
-        return f"555{rng.randint(100, 199):04d}", 1, 50
+        return f"555{rng.randint(100, 199):04d}", CATEGORY["Local Coin"], 50, 1, 3
     if x < 0.74:
         npa = rng.choice(["714", "210", "702", "949", "512", "775"])
-        return f"1{npa}555{rng.randint(100, 199):04d}", 2, rng.choice([100, 125, 150, 200, 250])
+        cat = CATEGORY["IntraState IntraLata Coin" if npa == area else "InterState InterLata Coin"]
+        return f"1{npa}555{rng.randint(100, 199):04d}", cat, rng.choice([100, 125, 150, 200, 250]), 3, 3
     if x < 0.86:
-        return f"1800555{rng.randint(100, 199):04d}", 3, 0
-    return rng.choice(["911", "411", "0", "5551212"]), 4, rng.choice([0, 0, 50])
+        return f"1800555{rng.randint(100, 199):04d}", CATEGORY["(1)800-NXX-XXXX"], 0, 0, 1
+    dialed = rng.choice(["911", "411", "0", "5551212"])
+    cat = {"911": "911", "411": "411", "0": "0-", "5551212": "(1)555-XXXX"}[dialed]
+    return dialed, CATEGORY[cat], 50 if dialed == "411" else 0, 0, 0
 
 
 def make_demo(
@@ -431,6 +456,10 @@ def make_demo(
 
     busy = next((s for s in roster if s.kind == "ok"), roster[0])
     busy.calls_per_day = 5.5  # one busy phone, so call lists run to several pages
+    healthy = [s for s in roster if s.kind == "ok" and s is not busy]
+    if len(healthy) >= 2:  # one phone with a relay fault, one whose handset is sometimes left off-hook
+        healthy[0].trouble, healthy[0].trouble_from = "relay", end - dt.timedelta(days=rng.randint(20, 60))
+        healthy[1].trouble = "handset"
 
     coins, errs, auds, cas = [], [], [], []
 
@@ -453,20 +482,26 @@ def make_demo(
             if not dead:
                 for _ in range(_poisson(rng, s.calls_per_day)):
                     t = dt.datetime.combine(day_before, dt.time(rng.randint(6, 23), rng.randint(0, 59)))
-                    dialed, ctype, cents = _dialed(rng, s.phone[:3])
+                    dialed, cat, cents, band, route = _dialed(rng, s.phone[:3])
                     if s.kind != "never":
                         s.total += cents
                         s.box += cents
-                    secs = rng.randint(20, 900) if ctype != 4 else rng.randint(10, 120)
-                    s.pending.append((dialed, t, struct.pack("<IIII", secs, cents, cents, ctype)))
-                    s.ca_counts[ctype] += 1
+                    secs = rng.randint(10, 120) if route == 0 else rng.randint(20, 900)
+                    s.pending.append((dialed, t, call_detail_bytes(secs, cents, cents, band, route)))
+                    c = s.ca_counts.setdefault(cat, [0, 0, 0])
+                    c[0] += 1
+                    c[1] += cents
+                    c[2] += -(-secs // 60)
                 s.pending.sort(key=lambda c: c[1])
             # the collector empties the box (between polls)
             if night >= s.next_collect and not dead:
-                s.box = rng.randint(0, 150)  # coins that came in after the box was emptied
+                after = rng.randint(0, min(150, s.box))  # coins that came in after the box was emptied
+                s.taken += s.box - after
+                s.box = after
                 s.next_collect = night + dt.timedelta(days=s.collect_every + rng.randint(-5, 5))
             elif s.box > 9000 and not dead:
-                s.box = 0  # "cash volume full" -- emptied early
+                s.taken += s.box  # "cash volume full" -- emptied early
+                s.box = 0
             if s.unpolled_from and night >= s.unpolled_from:
                 continue
             t = night.replace(hour=1, minute=0) + dt.timedelta(minutes=2 * k + rng.randint(0, 1))
@@ -485,11 +520,39 @@ def make_demo(
                 if rng.random() < 0.5:
                     continue  # try again tomorrow
                 t = night.replace(hour=rng.choice([8, 9]), minute=rng.randint(0, 59))  # manual re-poll
-            coins.append((t, coin(s.phone, t, s.total, s.box, status=s.status, **kw)))
+            flags = []
+            if s.taken:
+                flags.append("E$")
+            if s.box >= 7500:
+                flags.append("$V")
+            if s.trouble == "relay" and night >= s.trouble_from:
+                flags += ["RJ", "RC"] + (["RR"] if rng.random() < 0.6 else [])
+            if s.trouble == "handset" and rng.random() < 0.08:
+                flags.append("HO")
+            coins.append(
+                (
+                    t,
+                    coin(
+                        s.phone,
+                        t,
+                        s.total,
+                        s.box,
+                        status=s.status,
+                        flags=flags,
+                        audit_records=len(s.pending),
+                        collected=s.taken,
+                        **kw,
+                    ),
+                )
+            )
+            s.taken = 0
             collect_audit(s, t)
             if night >= s.ca_next:
-                cas.append((t, callacct(s.phone, t, day_before, night.date(), s.ca_counts, **kw)))
-                s.ca_counts = [0] * 12
+                cas.append(
+                    (t, callacct(s.phone, t, s.ca_since or day_before, night.date(), s.ca_counts, **kw))
+                )
+                s.ca_since = night.date()
+                s.ca_counts = {}
                 s.ca_next = night + dt.timedelta(days=rng.randint(7, 14))
         night += dt.timedelta(days=1)
 

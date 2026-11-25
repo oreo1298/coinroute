@@ -145,7 +145,10 @@ def test_call_accounting_and_settings(demo_db):
     with RouteDB(demo_db) as db:
         phone = db.site_summary()["sites"][0]["phone_digits"]
         ca = db.call_accounting(phone)
-        assert ca and ca[0]["period_start"] <= ca[0]["period_end"] and ca[0]["counters_hex"]
+        assert ca and ca[0]["period_start"] <= ca[0]["period_end"]
+        busy = [r for r in ca if r["categories"]]
+        assert busy and all(r["calls"] == sum(c["calls"] for c in r["categories"]) for r in busy)
+        assert {c["category"] for r in busy for c in r["categories"]} >= {"Local Coin"}
         assert db.system() == {
             "install_date": "2000-04-20",
             "company": "Demo Payphone Co.",

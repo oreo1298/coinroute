@@ -30,6 +30,21 @@ def status_text(kind: str, days: int | None) -> str:
     return f"Silent {days} day{'s' if days != 1 else ''}"
 
 
+def flag_codes(flags: list[str] | None) -> str:
+    return " ".join(flags or [])
+
+
+def flag_names(flags: list[str] | None) -> str | None:
+    """Tooltip for a list of trouble-flag codes: one 'CODE  Name' per line."""
+    from ..xnet import TROUBLE_NAMES
+
+    return "\n".join(f"{c}  {TROUBLE_NAMES.get(c, '?')}" for c in flags) if flags else None
+
+
+def duration(seconds: int | None) -> str:
+    return "" if seconds is None else f"{seconds // 60}:{seconds % 60:02d}"
+
+
 def is_dark(palette: QPalette | None = None) -> bool:
     pal = palette or QApplication.palette()
     return pal.color(QPalette.ColorRole.Window).lightness() < 128

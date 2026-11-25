@@ -27,7 +27,7 @@ def test_detail_tabs_populate(qtbot, db):
     assert sum(r["n"] for r in d.errors.counts_model.rows) == site["comm_errors"]
     assert d.errors.list_model.rowCount() == min(site["comm_errors"], 200)
     assert d.accounting.model.rowCount() == site["call_accounting_periods"]
-    assert "46 " in d.accounting.dump.toPlainText()  # first row selected
+    assert d.accounting.cats.rowCount() > 0  # first period selected, its categories listed
     assert d.status.text() == "Answering"
     for i in range(d.tabs.count()):
         d.tabs.setCurrentIndex(i)
