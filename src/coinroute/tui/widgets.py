@@ -363,37 +363,61 @@ class Message(Screen):
         return POP
 
 
-class Prompt(Screen):
-    """Ask for one or more values. ENTER moves to the next field and, on the last, calls `done`
-    with the values; its result (a Screen, a message string or None) replaces the prompt."""
+class Invalid(Exception):
+    """Raised by a Prompt's `done` to keep the form open and show what is wrong."""
 
-    keys = (("ESC", "Cancel"), ("TAB", "Next field"), ("ENTER", "OK"))
+
+class Prompt(Screen):
+    """Ask for one or more values. ENTER moves to the next field and, on the last (or F2 anywhere),
+    calls `done` with the values; its result (a Screen, a message string or None) replaces the
+    prompt. If `done` raises Invalid (or ValueError), the form stays open with the message shown.
+    `compact` puts one field per line, for long forms like the site record."""
 
     def __init__(self, title: str, fields: list[tuple[str, str]], done: Callable[[list[str]], object],
-                 note: str = ""):
+                 note: str = "", compact: bool = False):
         self.title = title
         self.labels = [f[0] for f in fields]
         self.values = [f[1] for f in fields]
         self.done = done
         self.note = note
+        self.error = ""
+        self.compact = compact
         self.cur = 0
         self.replace = True  # the app swaps the prompt for what `done` returns
+        self.keys = (("ESC", "Cancel"), ("TAB ↑↓", "Field"), ("ENTER", "Next / OK"), ("F2", "Save"))
 
     def draw(self, c: Canvas, top: int, height: int) -> None:
         _, cols = c.size()
         lw = max(len(lbl) for lbl in self.labels) + 2
         w = min(cols - 2, max(60, lw + 40, len(self.note) + 6))
-        h = len(self.labels) * 2 + 3 + (2 if self.note else 0)
+        step = 1 if self.compact else 2
+        extra = sum(2 for t in (self.note, self.error) if t)
+        h = len(self.labels) * step + 3 + extra
         y, x = top + max(0, (height - h) // 2), (cols - w) // 2
         c.fill(y, x, h, w, "normal")
         c.box(y, x, h, w, title=self.title)
         fw = w - lw - 6
         for i, (lbl, val) in enumerate(zip(self.labels, self.values)):
-            c.put(y + 2 + 2 * i, x + 2, (lbl + ":").ljust(lw), "normal")
+            row = y + 2 + step * i
+            c.put(row, x + 2, (lbl + ":").ljust(lw), "title" if i == self.cur and self.compact else "normal")
             shown = val[-(fw - 1):] + ("_" if i == self.cur else "")
-            c.put(y + 2 + 2 * i, x + 2 + lw, shown.ljust(fw), "field")
+            c.put(row, x + 2 + lw, shown.ljust(fw), "field")
+        foot = y + h - 2
+        if self.error:
+            c.put(foot, x + 2, self.error[: w - 4].ljust(w - 4), "warn")
+            foot -= 2
         if self.note:
-            c.put(y + h - 2, x + 2, self.note[: w - 4], "dim")
+            c.put(foot, x + 2, self.note[: w - 4], "dim")
+
+    def _finish(self):
+        try:
+            r = self.done(self.values)
+        except (Invalid, ValueError) as e:
+            self.error = str(e)
+            return None
+        if r is None:
+            return POP
+        return ("replace", as_screen(self.title, r))
 
     def key(self, k: str):
         if k == "ESC":
@@ -404,14 +428,13 @@ class Prompt(Screen):
             self.cur = (self.cur - 1) % len(self.values)
         elif k == "BACKSPACE":
             self.values[self.cur] = self.values[self.cur][:-1]
+        elif k == "F2":
+            return self._finish()
         elif k == "ENTER":
             if self.cur < len(self.values) - 1:
                 self.cur += 1
                 return None
-            r = self.done(self.values)
-            if r is None:
-                return POP
-            return ("replace", as_screen(self.title, r))
+            return self._finish()
         elif len(k) == 1 and k.isprintable():
             self.values[self.cur] += k
         return None

@@ -255,6 +255,8 @@ class SitesView(QWidget):
 
     open_site = Signal(str)  # phone digits
     poll_site = Signal(str)  # phone digits: "Poll now…" from the context menu
+    edit_site = Signal(str)
+    remove_site = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -496,6 +498,15 @@ class SitesView(QWidget):
         pl.triggered.connect(lambda: self.poll_site.emit(row["phone_digits"]))
         pl.setEnabled(not row["removed"])
         m.addAction(pl)
+        ed = QAction("Edit site…", m)
+        ed.triggered.connect(lambda: self.edit_site.emit(row["phone_digits"]))
+        ed.setEnabled(not row["removed"])
+        m.addAction(ed)
+        rm = QAction("Remove site…", m)
+        rm.triggered.connect(lambda: self.remove_site.emit(row["phone_digits"]))
+        rm.setEnabled(not row["removed"])
+        m.addAction(rm)
+        m.addSeparator()
         c = QAction("Copy phone number", m)
         c.triggered.connect(lambda: QGuiApplication.clipboard().setText(row["phone"]))
         m.addAction(c)

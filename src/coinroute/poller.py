@@ -54,12 +54,16 @@ class PollOutcome:
 
 class Poller:
     def __init__(self, modem: Modem, *, progress: Callable[[str], None] | None = None,
-                 collect_records: bool = False, set_clock: bool = True, dial_prefix: str = "",
+                 collect_records: bool = False, clear_records: bool = False, store: PollStore | None = None,
+                 set_clock: bool = True, dial_prefix: str = "",
                  now: Callable[[], _dt.datetime] | None = None, reply_timeout: float = 5.0,
                  status_timeout: float = 30.0):
         self.modem = modem
         self.progress = progress or (lambda step: None)
         self.collect_records = collect_records
+        # records are cleared from the phone only once they are safe in the database
+        self.clear_records = clear_records and store is not None
+        self.store = store
         self.set_clock = set_clock
         self.dial_prefix = dial_prefix
         self.now = now or (lambda: _dt.datetime.now().replace(second=0, microsecond=0))
@@ -118,7 +122,7 @@ class Poller:
                 return fail(13 if "no reply" in str(e) else 14)
 
             if self.collect_records:
-                err = self._records(link, st, out, step)
+                err = self._records(link, st, out, step, site)
                 if err:
                     return fail(err)
 
@@ -153,29 +157,48 @@ class Poller:
             except ModemError:
                 pass
 
-    def _records(self, link: p.Link, st: p.Status, out: PollOutcome, step) -> int:
-        """Read the billing and audit records the phone holds (left in the phone: see PROTOCOL.md)."""
+    def _records(self, link: p.Link, st: p.Status, out: PollOutcome, step, site: dict) -> int:
+        """Read the billing and audit records the phone holds; with `clear_records`, save them and
+        then clear them from the phone with T / K and the matching flag masks, as ExpressNet does."""
         step("Collect CDR counts")
         try:
             c = link.cdr_counts()
         except p.ProtocolError:
             return 37
+        clear = p.clear_code(site.get("rate_record_raw"), st.phone_type)
         kinds = (
             ("billing", p.billing_base(st.phone_type), p.BILLING_RECORD, p.BILLING_SLOTS, p.BILLING_PER_READ,
-             c.billing_first, c.billing_count, c.billing_ok, out.billing, 40),
+             c.billing_first, c.billing_count, c.billing_ok, out.billing, 40,
+             p.cmd_clear_billing, 46, p.CLEAR_BILLING, 47),
             ("audit", p.audit_base(st.phone_type, st.model), p.AUDIT_RECORD, p.AUDIT_SLOTS, p.AUDIT_PER_READ,
-             c.audit_first, c.audit_count, c.audit_ok, out.audit, 48),
+             c.audit_first, c.audit_count, c.audit_ok, out.audit, 48,
+             p.cmd_clear_audit, 53, p.CLEAR_AUDIT, 54),
         )
-        for name, base, size, slots, per, first, count, ok, into, code in kinds:
+        for (name, base, size, slots, per, first, count, ok, into, code,
+             clear_cmd, clear_err, flags, flags_err) in kinds:
             reads = p.record_reads(p.ring_reads(base, size, slots, first, count, ok), size, per)
             if reads:
                 step(f"Get {name} CDRs ({sum(n for _, n in reads) // size})")
+            got = []
             for addr, n in reads:
                 try:
                     data = link.read_memory(addr, n)
                 except p.ProtocolError:
                     return code
-                into += [data[i:i + size] for i in range(0, len(data), size)]
+                got += [data[i:i + size] for i in range(0, len(data), size)]
+            into += got
+            if not (self.clear_records and got):
+                continue
+            self.store.save_pending(site["phone"], name, got)  # safe before the phone forgets them
+            step(f"Clear {name} CDRs")
+            try:
+                link.command(clear_cmd(clear[0], clear[1]))
+            except p.ProtocolError:
+                return clear_err
+            try:
+                link.clear_flags(*flags)
+            except p.ProtocolError:
+                return flags_err
         return 0
 
 
@@ -189,7 +212,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY, phone TEXT, at TEXT, ok INTEGER, code INTEGER,
     message TEXT, connect TEXT, accumulator INTEGER, coin_poll_id INTEGER, comm_error_id INTEGER,
     status BLOB, steps TEXT, log TEXT);
-CREATE TABLE IF NOT EXISTS poll_records (id INTEGER PRIMARY KEY, poll_id INTEGER, kind TEXT, raw BLOB);
+CREATE TABLE IF NOT EXISTS poll_records (id INTEGER PRIMARY KEY, poll_id INTEGER, kind TEXT, raw BLOB,
+    phone TEXT);
 CREATE INDEX IF NOT EXISTS polls_phone ON polls(phone, at);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
@@ -201,6 +225,9 @@ class PollStore:
     def __init__(self, db_path: str | PathLike):
         self.con = sqlite3.connect(str(db_path))
         self.con.executescript(SCHEMA)
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(poll_records)")}
+        if "phone" not in cols:  # databases polled by an earlier version
+            self.con.execute("ALTER TABLE poll_records ADD COLUMN phone TEXT")
 
     def close(self) -> None:
         self.con.close()
@@ -210,6 +237,13 @@ class PollStore:
 
     def __exit__(self, *exc):
         self.close()
+
+    def save_pending(self, phone: str, kind: str, records: list[bytes]) -> None:
+        """Keep call records the moment they are read (before the phone is told to clear them);
+        record() attaches them to the poll."""
+        self.con.executemany("INSERT INTO poll_records (poll_id, kind, raw, phone) VALUES (NULL, ?, ?, ?)",
+                             [(kind, r, phone) for r in records])
+        self.con.commit()
 
     def setting(self, key: str, default: str = "") -> str:
         r = self.con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -256,8 +290,12 @@ class PollStore:
              "\n".join(f"{d} {b.hex(' ')}" for d, b in out.log)),
         )
         poll_id = cur.lastrowid
-        cur.executemany("INSERT INTO poll_records (poll_id, kind, raw) VALUES (?,?,?)",
-                        [(poll_id, "billing", r) for r in out.billing] + [(poll_id, "audit", r) for r in out.audit])
+        pending = {(k, r) for k, r in cur.execute(
+            "SELECT kind, raw FROM poll_records WHERE poll_id IS NULL AND phone=?", (site["phone"],))}
+        cur.execute("UPDATE poll_records SET poll_id=? WHERE poll_id IS NULL AND phone=?", (poll_id, site["phone"]))
+        cur.executemany("INSERT INTO poll_records (poll_id, kind, raw, phone) VALUES (?,?,?,?)",
+                        [(poll_id, k, r, site["phone"]) for k, recs in (("billing", out.billing), ("audit", out.audit))
+                         for r in recs if (k, r) not in pending])
         end = self.con.execute("SELECT value FROM meta WHERE key='data_end'").fetchone()
         if not end or (end[0] or "") < at:
             self.con.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('data_end', ?)", (at,))
@@ -310,4 +348,5 @@ def site_for_poll(db, phone: str) -> dict | None:
     if not s or s.get("removed"):
         return None
     return {"phone": phone, "security_code": s.get("security_code"), "group_no": s.get("group_no"),
-            "site_no": s.get("site_no"), "description": s.get("description")}
+            "site_no": s.get("site_no"), "description": s.get("description"),
+            "rate_record_raw": db.rate_record_raw(s.get("rate_record"))}

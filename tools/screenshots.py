@@ -156,6 +156,11 @@ def main(argv=None) -> int:
     pdlg.grab().save(str(out / f"poll-dialog{sfx}.png"))
     pdlg.close()
 
+    sdlg = win.edit_site(rows[0]["phone_digits"])
+    settle(app)
+    sdlg.grab().save(str(out / f"site-edit{sfx}.png"))
+    sdlg.close()
+
     win.tabs.setCurrentIndex(1)
     sv = win.settings_view
     for i, name in enumerate(sv.PAGES):

@@ -130,9 +130,11 @@ def cmd_poll(a):
         line = open_line(a.port, a.baud)
     else:
         sys.exit("coinroute: give --port DEVICE (the modem's serial port), or --simulate")
+    store = None if a.dry_run else PollStore(a.db)
     try:
         modem = Modem(line, GENERIC if a.generic else UPMS1200)
-        out = Poller(modem, progress=lambda s: print(f"  {s}"), collect_records=a.cdrs,
+        out = Poller(modem, progress=lambda s: print(f"  {s}"), collect_records=a.cdrs or a.keep_cdrs,
+                     clear_records=a.cdrs and not a.keep_cdrs, store=store,
                      set_clock=not a.no_clock, dial_prefix=a.prefix).poll(site)
     except ModemError as e:
         sys.exit(f"coinroute: modem: {e}")
@@ -145,10 +147,13 @@ def cmd_poll(a):
               f"flags {' '.join(_flags(st)) or 'none'}")
     else:
         print(f"Failed: {out.message} (code {out.code})")
-    if a.dry_run:
+    if out.billing or out.audit:
+        print(f"Call records: {len(out.billing)} billing, {len(out.audit)} audit"
+              + (" (cleared from the phone)" if a.cdrs and not a.keep_cdrs and not a.dry_run else ""))
+    if store is None:
         print("(not saved: --dry-run)")
     else:
-        with PollStore(a.db) as store:
+        with store:
             store.record(site, out)
         print(f"Saved to {a.db}.")
     return 0 if out.ok else 1
@@ -175,7 +180,8 @@ def cmd_autopoll(a):
 
     stamp = lambda m: print(f"{__import__('time').strftime('%H:%M:%S')}  {m}", flush=True)
     ap = AutoPoller(a.db, line_for, profile=GENERIC if a.generic else UPMS1200, progress=stamp,
-                    retries=a.retries, poller_options={"dial_prefix": a.prefix})
+                    retries=a.retries, poller_options={"dial_prefix": a.prefix, "collect_records": a.cdrs,
+                                                       "clear_records": a.cdrs})
     for pl in ap.plan():
         print(f"  list {pl['number']} {pl['name']:<12} {pl['start_time']:>5}  {pl['days_text']:<28} "
               f"{len(pl['phones'])} phones")
@@ -274,7 +280,9 @@ def main(argv=None):
     p.add_argument("--baud", type=int, default=9600, help="PC-to-modem speed (default 9600)")
     p.add_argument("--generic", action="store_true", help="a generic Hayes modem instead of the UPMS1200")
     p.add_argument("--prefix", default="", help="dial this before the number (e.g. 1, or 9, for a PBX)")
-    p.add_argument("--cdrs", action="store_true", help="also read the phone's call records (left in the phone)")
+    p.add_argument("--cdrs", action="store_true",
+                   help="also collect the phone's call records: saved, then cleared from the phone")
+    p.add_argument("--keep-cdrs", action="store_true", help="read the call records but leave them in the phone")
     p.add_argument("--no-clock", action="store_true", help="don't set the phone's clock")
     p.add_argument("--simulate", action="store_true", help="poll a simulated phone instead (no modem needed)")
     p.add_argument("--dry-run", action="store_true", help="don't save the result")
@@ -287,6 +295,7 @@ def main(argv=None):
     p.add_argument("--generic", action="store_true", help="a generic Hayes modem instead of the UPMS1200")
     p.add_argument("--prefix", default="", help="dial this before each number")
     p.add_argument("--retries", type=int, default=1, help="passes over failed phones at the end of a run")
+    p.add_argument("--cdrs", action="store_true", help="collect call records too (saved, then cleared)")
     p.add_argument("--once", action="store_true", help="run whatever is due now, then stop")
     p.add_argument("--list", help="run this poll list now (number or name), then stop")
     p.add_argument("--simulate", action="store_true", help="poll simulated phones instead (no modem needed)")

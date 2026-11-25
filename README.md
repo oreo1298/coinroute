@@ -67,6 +67,18 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+### Editing sites
+
+Add a phone, change its description, group, address, records or security
+code, or take it off the route: in the desktop app's **Sites** menu (Edit
+site… F2, New site… Ctrl+N, Remove site…, Restore removed site…, also on
+the Sites view's right-click menu), or in the terminal version (on a site
+record F2 Edit; in the site list F6 Add and F8 Remove; File Utilities →
+Restore Removed Site). Changes go into the route database, in the same
+record layout ExpressNet uses, and every change is logged (security codes
+masked). A removed site keeps its history and can be put back. The
+ExpressNet folder is never changed.
+
 ### Polling (first version)
 
 coinroute can now call a phone itself, following ExpressNet's steps
@@ -94,8 +106,11 @@ In the terminal version: Modems → Manual Polling, and Modems → Auto
 Polling → Stop/Restart (F2); in the desktop app: Modems → Poll now (port
 `SIM` for the simulated phone everywhere). **This has not been tried on a real phone yet**: run the
 first real polls while ExpressNet is still at hand, ideally recording the
-line with `tools/serial_tap.py`. Call records are only read with `--cdrs`
-and stay in the phone until the command that clears them is known.
+line with `tools/serial_tap.py`. Call records are collected only with
+`--cdrs`: they are saved in the route database first and then cleared from
+the phone, as ExpressNet does (`--keep-cdrs` reads them and leaves them
+there). While ExpressNet still polls the same phones, use `--keep-cdrs`, or
+neither, so ExpressNet keeps getting its records.
 
 ### Terminal version
 
@@ -122,6 +137,30 @@ their usual place and say so.
 ![Main menu](docs/screenshots/tui-main-menu.png)
 ![Site record](docs/screenshots/tui-site-record.png)
 ![Trouble report](docs/screenshots/tui-trouble-report.png)
+
+### Install on Arch Linux (CachyOS, EndeavourOS, Manjaro)
+
+`packaging/arch/PKGBUILD` builds a pacman package from your clone of this
+repository (no GitHub login needed): the `coinroute` and `coinroute-gui`
+commands, menu entries for the desktop app and the terminal version, and
+the docs.
+
+```sh
+mkdir -p ~/build/coinroute && cp ~/coinroute/packaging/arch/PKGBUILD ~/build/coinroute/
+cd ~/build/coinroute && makepkg -si
+```
+
+It packages what is committed on the branch checked out in `~/coinroute`
+(set `COINROUTE_REPO=/path/to/clone` if it lives elsewhere) and runs the
+tests while building (`--nocheck` skips them). To update: `git pull` in the
+clone, then `makepkg -sif` again in `~/build/coinroute`. To remove:
+`sudo pacman -R coinroute`. The desktop app needs `pyside6` (pacman offers
+it as an optional dependency). If you installed coinroute with pipx before,
+remove that first: `pipx uninstall coinroute`, and delete
+`~/.local/share/applications/coinroute.desktop`.
+
+On Windows, use the `coinroute-windows` download from the CI build (the
+desktop app, `coinroute.exe`, and `coinroute-terminal.bat`).
 
 ### Try it without real data
 

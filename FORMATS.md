@@ -217,7 +217,7 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 | PARAM/MODEMS.DAT | 230 | name [21] @1, description [41] @22, init [41] @63, answer [41] @104, dial ×3 [21] @145/166/187, reset [21] @208 ✅ |
 | LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅; poll list: byte 8 = 1 and byte 11 = the list's number when the group is in a poll list, else zeros 🟡 (in a real installation the groups marked for list 2 are exactly the groups of that list's failed-call file `POLL0002.BAD`); byte 21 is `0x20` or `*` ❓ |
 | LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; list number u32 @75 🟡; seven u16 day flags @91, Sunday first 🟡 (order of ExpressNet's poll-list editor; nightly lists have all seven set); a timestamp (u32 minutes) @109 and more u16 flags from 113 ❓ |
-| PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; rate tables ❓ |
+| PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; a security code in packed BCD @4762 (equals a site's code in 35 of 42 real records; ExpressNet can send it with `Q` instead of the site's) ✅; the two bytes ExpressNet sends with the clear-records commands `T`/`K`: @2499 for phones whose type starts with D, @4769 for the others (read there by ExpressNet ✅; zero in every record seen); rate tables ❓ |
 | PARAM/MISCOPT.DAT | 420 | options record, see below |
 | SITES/OPTNCNFG, OPTNHIST, OPTNDESC | | ❓ |
 | LOCAL/POLLnnnn.BAD | 27 per entry, no header | phones a run of poll list *nnnn* could not reach, one entry each: u8 @0 (0), phone [11] @1, group [7] @12, u16 position in the run @19, u16 @21 (0), u16 poll-list number @23 (matches *nnnn*), u16 @25 (6 in every entry seen: perhaps the error code, 6 = no carrier) 🟡. Plain file, not c-tree. Not imported. |

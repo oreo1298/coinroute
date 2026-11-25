@@ -146,3 +146,31 @@ def test_the_last_route_is_remembered(demo_db):
     a = make_app(None, remember=True)
     assert a.route.path == str(demo_db.resolve())
     assert make_app(None).route.db is None  # tests and scripts start empty unless asked
+
+
+def test_edit_add_remove_sites(demo_db, tmp_path):
+    import shutil
+
+    from coinroute.db import RouteDB
+
+    db = tmp_path / "route.db"
+    shutil.copy(demo_db, db)
+    a = make_app(str(db))
+    t = a.feed(["1", "ENTER", "F2"]).text()                       # first site's record, then Edit
+    assert "EDIT SITE RECORD  210-555-0108" in t and "Security code:" in t
+    t = a.feed([*["BACKSPACE"] * 30, *"AIRPORT GATE 4", "F2"]).text()
+    assert "SITE RECORD  210-555-0108" in t and "AIRPORT GATE 4" in t
+    with RouteDB(db) as r:
+        assert r.site("2105550108")["description"] == "AIRPORT GATE 4"
+    t = a.feed(["F2", *["DOWN"] * 13, *["BACKSPACE"] * 4, *"12x4", "F2"]).text()
+    assert "The security code is 4 digits." in t                   # the form stays open
+    a.feed(["ESC", "ESC", "ESC"])                                  # back to the main menu
+    t = a.feed(["1", "F6", *"5125550199", "DOWN", *"NEW SHELTER", "F2"]).text()
+    assert "SITE RECORD  512-555-0199" in t and "NEW SHELTER" in t
+    a.feed(["ESC", "ESC", "1", *"AIRPORT"])                         # find it, then F8
+    t = a.feed(["F8", *"YES", "ENTER"]).text()
+    assert "Removed 210-555-0108" in t
+    t = a.feed(["ESC", "ESC", "ESC", "7", "3", *"210-555-0108", "ENTER"]).text()
+    assert "Put back 210-555-0108" in t
+    with RouteDB(db) as r:
+        assert not r.site("2105550108")["removed"] and r.site("5125550199")["description"] == "NEW SHELTER"

@@ -563,6 +563,10 @@ class RouteDB:
             "FROM rate_records r ORDER BY r.name"
         )
 
+    def rate_record_raw(self, name: str | None) -> bytes | None:
+        r = self._one("SELECT raw FROM rate_records WHERE name=?", name) if name else None
+        return r["raw"] if r else None
+
     def options_records(self) -> list[dict]:
         """Options records with description, security codes and how many sites use each."""
         rows = self._all(

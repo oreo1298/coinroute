@@ -203,6 +203,14 @@ schedule (outgoing nightly, incoming window); incoming calls (RING → ATA);
 writes results into the same database tables. Background service with the GUI
 as a client. Must be testable against fake_upms + fake payphone.
 
+## Milestone 5b — editing the route ✅ (first cut)
+
+`coinroute.sites`: add, edit, remove and restore sites in the route database,
+writing the same bytes ExpressNet would (FORMATS.md offsets) and logging
+every change. Desktop: Sites menu and the Sites view's context menu.
+Terminal: F2 / F6 / F8 and File Utilities → Restore Removed Site. Next:
+editing groups and poll lists; options records' codes.
+
 ## Milestone 6 — programming
 Download rates/options to phones; firmware downloads (the DD*.* files are
 Protel's — users supply their own).

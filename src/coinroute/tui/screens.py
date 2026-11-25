@@ -14,7 +14,21 @@ from ..db import RouteDB
 from ..fields import phone_display
 from ..reports import coin_report_text, default_period, trouble_report_text
 from ..xnet import SECURITY_CODES, TROUBLE_FLAGS, framing_text
-from .widgets import POP, QUIT, Col, Form, Item, Menu, Message, Prompt, Screen, Section, Table, TextView
+from .widgets import (
+    POP,
+    QUIT,
+    Col,
+    Form,
+    Invalid,
+    Item,
+    Menu,
+    Message,
+    Prompt,
+    Screen,
+    Section,
+    Table,
+    TextView,
+)
 
 FMT = "%Y-%m-%d %H:%M"
 NOT_YET = "coinroute can't do this yet. It is planned; see docs/ROADMAP.md."
@@ -102,8 +116,20 @@ class Route:
             Col("Status", "status", 16),
             Col("In box", "cash_box_cents", 8, right=True, fmt=money),
         ]
-        return Table(title, cols, s["sites"], on_enter=then or (lambda r: self.site_record(r["phone_digits"])),
-                     search=True, note="")
+        if then is not None:
+            return Table(title, cols, s["sites"], on_enter=then, search=True, note="")
+        t = Table(title, cols, s["sites"], on_enter=lambda r: self.site_record(r["phone_digits"]),
+                  search=True, note="", extra_keys=(("F6", "Add"), ("F8", "Remove")))
+
+        def on_key(k):
+            if k == "F6":
+                return self.add_site()
+            if k == "F8" and t.selected():
+                return self.remove_site(t.selected()["phone_digits"])
+            return None
+
+        t.on_key = on_key
+        return t
 
     def site_record(self, phone: str) -> Form:
         s = self.db.site(phone)
@@ -139,6 +165,8 @@ class Route:
         ]
 
         def on_key(k):
+            if k == "F2":
+                return self.edit_site(phone)
             if k == "F3":
                 return self.coin_history(phone)
             if k == "F4":
@@ -149,9 +177,71 @@ class Route:
             return None
 
         f = Form(f"SITE RECORD  {phone_display(phone)}", sections,
-                 extra_keys=(("F3", "Coin polls"), ("F4", "Failures"), ("F5", "Show/hide codes")),
+                 extra_keys=(("F2", "Edit"), ("F3", "Coin polls"), ("F4", "Failures"), ("F5", "Codes")),
                  on_key=on_key)
         return f
+
+    def edit_site(self, phone: str):
+        from ..sites import FIELDS, SECURITY, SiteEditor, SiteError
+
+        if self.db.site(phone).get("removed"):
+            return "This site has no site record to edit (it was removed)."
+        with SiteEditor(self.path) as ed:
+            current = ed.values(phone)
+        fields = [*FIELDS, SECURITY]
+
+        def done(v):
+            try:
+                with SiteEditor(self.path) as ed:
+                    changed = ed.update(phone, {f.key: val for f, val in zip(fields, v)})
+            except SiteError as e:
+                raise Invalid(str(e)) from None
+            return self.site_record(phone) if changed else None
+
+        return Prompt(f"EDIT SITE RECORD  {phone_display(phone)}", [(f.label, current[f.key]) for f in fields],
+                      done, compact=True, note="F2 saves. The ExpressNet folder is not changed.")
+
+    def add_site(self):
+        from ..sites import FIELDS, SECURITY, SiteEditor, SiteError
+
+        fields = [*FIELDS, SECURITY]
+
+        def done(v):
+            try:
+                with SiteEditor(self.path) as ed:
+                    phone = ed.add(v[0], {f.key: val for f, val in zip(fields, v[1:])})
+            except SiteError as e:
+                raise Invalid(str(e)) from None
+            return self.site_record(phone)
+
+        return Prompt("ADD SITE", [("Phone number", ""), *[(f.label, "") for f in fields]], done, compact=True,
+                      note="F2 saves. Call costing and options records must exist.")
+
+    def remove_site(self, phone: str):
+        from ..sites import SiteEditor
+
+        def done(v):
+            if v[0].strip().upper() != "YES":
+                return "Not removed."
+            with SiteEditor(self.path) as ed:
+                ed.remove(phone)
+            return (f"Removed {phone_display(phone)}. Its history stays; File Utilities > Restore "
+                    "Removed Site puts it back.")
+
+        return Prompt(f"REMOVE SITE  {phone_display(phone)}", [("Type YES to remove it", "")], done)
+
+    def restore_prompt(self):
+        from ..sites import SiteEditor, SiteError, digits_only
+
+        def done(v):
+            try:
+                with SiteEditor(self.path) as ed:
+                    ed.restore(digits_only(v[0]))
+            except SiteError as e:
+                raise Invalid(str(e)) from None
+            return f"Put back {v[0].strip()}."
+
+        return Prompt("RESTORE REMOVED SITE", [("Phone number", "")], done)
 
     def coin_history(self, phone: str) -> Table:
         rows = list(reversed(self.db.coin_polls(phone)))
@@ -422,6 +512,8 @@ class Route:
         return Menu("FILE UTILITIES MENU", [
             Item("Open Route Database", "Open a database made by an import", self.open_prompt),
             Item("Purge/Rebuild", "Not needed in coinroute", rebuild),
+            Item("Restore Removed Site", "Put back a site removed in coinroute",
+                 lambda: self.need_db() or self.restore_prompt()),
             Item("Import ExpressNet Data", "Read an ExpressNet folder into a new database", self.import_prompt),
             Item("Export Data", "Write every table to CSV files", lambda: self.need_db() or self.export_prompt()),
             Item("Return", "Back to the main menu"),
