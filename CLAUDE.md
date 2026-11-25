@@ -64,6 +64,7 @@ src/coinroute/
                 importdlg, workers (QThread jobs), models (row + paged table models), style
 tests/          fakexnet.py (tiny fixed folder), conftest.py (demo route fixtures); test_*.py,
                 test_gui_*.py need pytest-qt
+packaging/           PyInstaller entry scripts (Windows build in CI); arch/PKGBUILD; linux/*.desktop
 tools/fake_upms.py   stand-in UPMS1200 modem (serial or pty) for bench tests
 tools/screenshots.py renders every GUI screen from the demo route to PNG
 tools/tui_shots.py   renders the terminal screens to PNG (key sequences in SHOTS; add new screens)

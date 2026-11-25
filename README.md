@@ -138,6 +138,30 @@ their usual place and say so.
 ![Site record](docs/screenshots/tui-site-record.png)
 ![Trouble report](docs/screenshots/tui-trouble-report.png)
 
+### Install on Arch Linux (CachyOS, EndeavourOS, Manjaro)
+
+`packaging/arch/PKGBUILD` builds a pacman package from your clone of this
+repository (no GitHub login needed): the `coinroute` and `coinroute-gui`
+commands, menu entries for the desktop app and the terminal version, and
+the docs.
+
+```sh
+mkdir -p ~/build/coinroute && cp ~/coinroute/packaging/arch/PKGBUILD ~/build/coinroute/
+cd ~/build/coinroute && makepkg -si
+```
+
+It packages what is committed on the branch checked out in `~/coinroute`
+(set `COINROUTE_REPO=/path/to/clone` if it lives elsewhere) and runs the
+tests while building (`--nocheck` skips them). To update: `git pull` in the
+clone, then `makepkg -sif` again in `~/build/coinroute`. To remove:
+`sudo pacman -R coinroute`. The desktop app needs `pyside6` (pacman offers
+it as an optional dependency). If you installed coinroute with pipx before,
+remove that first: `pipx uninstall coinroute`, and delete
+`~/.local/share/applications/coinroute.desktop`.
+
+On Windows, use the `coinroute-windows` download from the CI build (the
+desktop app, `coinroute.exe`, and `coinroute-terminal.bat`).
+
 ### Try it without real data
 
 ```sh

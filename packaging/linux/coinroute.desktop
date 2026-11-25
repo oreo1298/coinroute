@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=coinroute
+GenericName=Payphone route manager
+Comment=Sites, polls, reports and polling for Protel payphones
+Exec=coinroute-gui %f
+Icon=office-database
+Terminal=false
+Categories=Office;Utility;
+Keywords=payphone;ExpressNet;Protel;polling;

@@ -1,0 +1,52 @@
+# coinroute for Arch Linux (and Arch-based: CachyOS, EndeavourOS, Manjaro).
+#
+# Builds from your local clone of the repository, so no GitHub login is needed:
+#
+#     mkdir -p ~/build/coinroute && cp ~/coinroute/packaging/arch/PKGBUILD ~/build/coinroute/
+#     cd ~/build/coinroute && makepkg -si
+#
+# It packages what is committed on the branch checked out in the clone. If the clone isn't
+# ~/coinroute, set COINROUTE_REPO=/path/to/coinroute first. Updating: `git pull` in the clone, then
+# `makepkg -sif` again here (the version follows the git history). Removing: `sudo pacman -R coinroute`.
+
+pkgname=coinroute
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Payphone route manager: reads Protel ExpressNet data and polls Protel payphones"
+arch=('any')
+url="https://github.com/oreo1298/coinroute"
+license=('LicenseRef-coinroute')  # private project, no public licence yet
+depends=('python' 'python-pyserial')
+optdepends=('pyside6: the desktop app (coinroute-gui)')
+makedepends=('git' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pytest' 'python-pytest-qt' 'pyside6')
+_repo="${COINROUTE_REPO:-$HOME/coinroute}"
+source=("coinroute::git+file://${_repo}")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd coinroute
+  local base
+  base=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/coinroute/__init__.py)
+  printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd coinroute
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd coinroute
+  # synthetic data only; the desktop tests run without a screen
+  QT_QPA_PLATFORM=offscreen PYTHONPATH=src python -m pytest -q -p no:cacheprovider
+}
+
+package() {
+  cd coinroute
+  python -m installer --destdir="$pkgdir" --prefix=/usr dist/*.whl
+  install -Dm644 packaging/linux/coinroute.desktop "$pkgdir/usr/share/applications/coinroute.desktop"
+  install -Dm644 packaging/linux/coinroute-terminal.desktop \
+    "$pkgdir/usr/share/applications/coinroute-terminal.desktop"
+  install -Dm644 -t "$pkgdir/usr/share/doc/coinroute" README.md FORMATS.md docs/*.md
+}

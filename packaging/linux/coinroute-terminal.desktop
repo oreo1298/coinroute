@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=coinroute (terminal)
+GenericName=Payphone route manager, terminal version
+Comment=The terminal version, with menus laid out like ExpressNet
+Exec=coinroute tui
+Icon=utilities-terminal
+Terminal=true
+Categories=Office;Utility;ConsoleOnly;
+Keywords=payphone;ExpressNet;Protel;polling;
