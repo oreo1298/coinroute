@@ -136,3 +136,13 @@ def test_widgets_alone():
     assert isinstance(a.stack[-1], Message)
     a.key("x")  # any key closes a message
     assert a.stack[-1] is m
+
+
+def test_the_last_route_is_remembered(demo_db):
+    from coinroute.tui.screens import last_route
+
+    make_app(str(demo_db))
+    assert last_route() == str(demo_db.resolve())
+    a = make_app(None, remember=True)
+    assert a.route.path == str(demo_db.resolve())
+    assert make_app(None).route.db is None  # tests and scripts start empty unless asked

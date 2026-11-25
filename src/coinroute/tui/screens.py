@@ -52,6 +52,7 @@ class Route:
         if self.db:
             self.db.close()
         self.db, self.path = db, path
+        remember_route(path)
         return None
 
     def heading(self) -> str:
@@ -623,10 +624,39 @@ def _flag_names(flags: bytes) -> list[str]:
     return trouble_flags(bytes(48) + bytes(flags))
 
 
-def make_app(db_path: str | None = None):
+def _config_file() -> Path:
+    import os
+
+    base = os.environ.get("APPDATA") or os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    return Path(base) / "coinroute" / "tui.json"
+
+
+def remember_route(path: str) -> None:
+    """Note the route last opened, so `coinroute tui` with no file opens it again."""
+    import json
+
+    try:
+        f = _config_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"last_route": str(Path(path).resolve())}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def last_route() -> str | None:
+    import json
+
+    try:
+        p = json.loads(_config_file().read_text(encoding="utf-8")).get("last_route")
+    except (OSError, ValueError):
+        return None
+    return p if p and Path(p).is_file() else None
+
+
+def make_app(db_path: str | None = None, remember: bool = False):
     from .app import App
 
-    route = Route(db_path)
+    route = Route(db_path or (last_route() if remember else None))
     app = App(route.main_menu(), heading=route.heading())
     app.route = route
     orig = app.draw
@@ -640,5 +670,5 @@ def make_app(db_path: str | None = None):
 
 
 def run(db_path: str | None = None) -> int:
-    make_app(db_path).run()
+    make_app(db_path, remember=True).run()
     return 0

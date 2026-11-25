@@ -55,6 +55,8 @@ jobs:
           # one folder: the GUI's, plus the console program beside it
           Copy-Item dist/coinroute/coinroute.exe dist/coinroute-gui/
           Copy-Item README.md dist/coinroute-gui/README.md
+          # double-click to start the terminal version (it reopens the route used last)
+          Set-Content dist/coinroute-gui/coinroute-terminal.bat "@echo off`r`ncd /d %~dp0`r`ncoinroute.exe tui %*`r`n"
       - name: Smoke test
         shell: pwsh
         env:

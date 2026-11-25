@@ -106,7 +106,11 @@ terminal window (80x24 or larger) on Linux, macOS or Windows.
 ```sh
 pip install -e '.[tui]'               # on Windows this adds windows-curses; elsewhere curses is built in
 coinroute tui route.db
+coinroute tui                         # reopens the route used last
 ```
+
+In the Windows download (`coinroute-windows`), double-click
+`coinroute-terminal.bat` to start it.
 
 Press a menu item's number or move with the arrow keys and ENTER; ESC goes
 back; F-keys on a screen are listed in the key bar. **1** looks up a site
