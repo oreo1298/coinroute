@@ -75,7 +75,8 @@ coinroute gui /tmp/demo.db
 
 - [FORMATS.md](FORMATS.md) — ExpressNet file layouts
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestones and the next one in detail
-- [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) — what is known about XNET.EXE and the protocol
+- [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) — what is known about XNET.EXE
+- [docs/PROTOCOL.md](docs/PROTOCOL.md) — how ExpressNet talks to a phone, as far as known
 - [CLAUDE.md](CLAUDE.md) — rules and commands for working on this repo
 
 ## Tools
@@ -85,6 +86,9 @@ coinroute gui /tmp/demo.db
 - `tools/re/ne.py` — helper for studying XNET.EXE (bring your own copy).
 - `tools/screenshots.py` — renders every screen of the app from the demo
   route to PNG files (works headless: `QT_QPA_PLATFORM=offscreen`).
+- `tools/serial_tap.py` — sits between ExpressNet and the UPMS1200 and logs
+  every byte both ways (`--pty` for an emulator's COM port); `--decode` shows
+  the phone frames in a log. Logs contain real data: keep them out of git.
 - `tools/try-it.sh` — one command to update a checkout, install into `.venv`,
   run the tests and open the app on the demo route: `bash tools/try-it.sh`
   (`--shots` also saves screenshots as your desktop draws them, `--no-gui`
