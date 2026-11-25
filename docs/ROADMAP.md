@@ -115,10 +115,13 @@ counts in COIN.DAT, the 16 bytes of audit call detail, the 83 call-accounting
 categories, and the five security codes in options records (MISCOPT.DAT). All
 are decoded on read from the raw bytes, so old databases need no re-import.
 
+Also done: poll-list weekdays, and the port records' polling speed, framing
+and PBX codes.
+
 **Still open:** the rest of COIN "PFlags" (57–63), the CALLACCT tail (544–551),
 the comm-error port, the options record's phone numbers / call-in windows /
-report schedule, poll-list weekday flags, port speeds and framing, rate tables
-(CALLCOST), and the site record's binary areas. The leads below were written
+report schedule, the ports' second speed and switches, rate tables (CALLCOST),
+and the site record's binary areas. The leads below were written
 before the work above; the trouble-flag lead is answered.
 
 Original notes:

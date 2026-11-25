@@ -134,6 +134,14 @@ def main(argv=None) -> int:
         settle(app)
         win.grab().save(str(out / f"detail-dead-comm-errors{sfx}.png"))
 
+    for kind in ("coin", "trouble"):
+        dlg = win.open_reports(kind)
+        if kind == "trouble":  # a few days, so the flagged polls show
+            dlg.start.setDateTime(dlg.start.dateTime().addDays(-3))
+        settle(app)
+        dlg.grab().save(str(out / f"report-{kind}{sfx}.png"))
+        dlg.close()
+
     win.tabs.setCurrentIndex(1)
     sv = win.settings_view
     for i, name in enumerate(sv.PAGES):

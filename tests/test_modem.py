@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+pytest.importorskip("fcntl", reason="the fake modem (tools/fake_upms.py) is POSIX-only")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import fake_upms as fu  # noqa: E402
 
@@ -142,6 +143,7 @@ def test_probe_cli_against_fake_upms_with_simulated_phone(tmp_path):
                               "--code", "4821", "--read", "0100", "4", "--reply-timeout", "2"],
                              capture_output=True, text=True, timeout=60)
         assert "CONNECT" in out.stdout, out.stderr
+        assert "status: phone 5550100000, type DA" in out.stdout
         assert "security code accepted" in out.stdout
         assert "0100: 00 00 00 00" in out.stdout
     finally:

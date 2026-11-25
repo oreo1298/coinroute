@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import RouteDB
-from ..xnet import SECURITY_CODES
+from ..xnet import SECURITY_CODES, framing_text
 from .detail import fit_columns, make_table, note
 from .models import RIGHT, Column, RowsModel
 from .style import count
@@ -174,6 +174,10 @@ class SettingsView(QWidget):
                 Column("Modem", "modem_name"),
                 Column("Description", "modem_description"),
                 Column("Line", "line_number"),
+                Column("Polling speed", "polling_speed", align=RIGHT),
+                Column("Framing", "framing", tip="Parity, data bits, stop bits", cell_tip=framing_text),
+                Column("PBX local", "pbx_local", mono=True),
+                Column("PBX long distance", "pbx_long", mono=True),
                 Column("Init", "init", mono=True),
                 Column("Answer", "answer", mono=True),
                 Column("Dial 1", "dial_1", mono=True),
@@ -205,9 +209,14 @@ class SettingsView(QWidget):
         self.stack.addWidget(p)
 
         # Poll lists
-        p = Page("Poll lists", "Polling schedules. The weekday flags are not decoded yet.")
+        p = Page("Poll lists", "Polling schedules: when each list starts and on which days.")
         self.polls_model = RowsModel(
-            [Column("Name", "name"), Column("Description", "description"), Column("Starts", "start_time")]
+            [
+                Column("Name", "name"),
+                Column("Description", "description"),
+                Column("Starts", "start_time"),
+                Column("Days", "days_text", tip="Weekdays the list runs on (Sunday first, like ExpressNet)"),
+            ]
         )
         self.poll_lists = make_table(self.polls_model, stretch=1)
         p.lay.addWidget(self.poll_lists, 1)

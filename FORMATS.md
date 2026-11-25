@@ -54,8 +54,8 @@ Text dates appear as `yymmdd` (CDR files), `yyyymmdd` (audit CDRs) and
 | 45 | u8 | audit records the phone held ("Aud RCnt.") | 🟡 |
 | 46 | u8 | billing records collected ("B RCol.") | 🟡 |
 | 47 | u8 | audit records collected ("A RCol.") | 🟡 |
-| 48 | 8 | trouble flags ("CFlags"), table below | ✅ |
-| 56 | 8 | more flags ("PFlags"): byte 56 holds FC (0x01) and CT (0x02); the rest ❓ | 🟡 |
+| 48 | 9 | trouble flags ("CFlags"), table below: the phone's status bytes 1–9 stored unchanged (docs/PROTOCOL.md); byte 56 holds FC (0x01) and CT (0x02) | ✅ |
+| 57 | 7 | ExpressNet's own flags for the call ("PFlags"), e.g. that a pair of CDR counts disagreed | 🟡 |
 | 64 | u32 | lifetime coin total, cents | ✅ matches printed Coin Report |
 | 68 | u32 | cash currently in box, cents | ✅ matches "In Box" column |
 | 72 | u32 | amount taken out when the box was emptied, cents ("Amt. Col.") | ✅ non-zero only on polls with the E$ flag (299 of 299 in a real installation) |
@@ -191,7 +191,9 @@ bytes of detail, named after the columns of ExpressNet's audit export:
 | 1066 | 11 | ZIP | ✅ |
 | 1250 | 13 | firmware in phone (`DD7019-0023R`) | 🟡 |
 | 1263 | 13 | firmware to download | 🟡 |
-| rest | | security code, flags, poll status, contact fields … | ❓ |
+| 1276 | 2 | u16, copied into ExpressNet's call set-up with the code below; same value on every site seen | ❓ |
+| 1278 | 2 | **security code** sent with `Q`: packed BCD in reading order (`1234` = bytes 12 34). Equals the site's options-record access code on every real site checked | ✅ |
+| rest | | flags, poll status, contact fields … | ❓ |
 
 ## SYSTEM/X3SYSPAR.DAT — 211 bytes, XOR-scrambled ✅
 
@@ -211,15 +213,17 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 
 | File | Len | Known fields |
 |---|---|---|
-| LOCAL/PORTS.DAT | 313 | port no u8 @1, modem name [21] @3, description [41] @24, init [41] @65, answer [41] @106, three dial strings [21] @147/168/189, reset [21] @210, line number [14] @232 ✅; speeds/framing ("1200", "9600", "N82") around 246–311 ❓ |
+| LOCAL/PORTS.DAT | 313 | port no u8 @1, modem name [21] @3, description [41] @24, init [41] @65, answer [41] @106, three dial strings [21] @147/168/189, reset [21] @210, line number [14] @232 ✅; PBX code for local calls [12] @246 and for long distance [12] @258 🟡 (order of ExpressNet's port editor; empty in the files seen, and two old records keep leftovers of an earlier layout after the NUL); polling speed (bps for outgoing calls, e.g. "1200") [5] @270 🟡; a second speed [5] @275, "9600" in every port seen, probably the PC-to-modem speed ❓; parity, data bits, stop bits as three characters @308 (e.g. `N82`) 🟡; u8 @311 and @312 (1 in every port seen; the editor's incoming/outgoing/Protel-modem switches are candidates) ❓ |
 | PARAM/MODEMS.DAT | 230 | name [21] @1, description [41] @22, init [41] @63, answer [41] @104, dial ×3 [21] @145/166/187, reset [21] @208 ✅ |
 | LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅ |
-| LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; weekday flags around 87–103 ❓ |
+| LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; list number u32 @75 🟡; seven u16 day flags @91, Sunday first 🟡 (order of ExpressNet's poll-list editor; nightly lists have all seven set); a timestamp (u32 minutes) @109 and more u16 flags from 113 ❓ |
 | PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; rate tables ❓ |
 | PARAM/MISCOPT.DAT | 420 | options record, see below |
 | SITES/OPTNCNFG, OPTNHIST, OPTNDESC | | ❓ |
+| LOCAL/POLLnnnn.BAD | 27 per entry, no header | phones a run of poll list *nnnn* could not reach, one entry each: u8 @0 (0), phone [11] @1, group [7] @12, u16 position in the run @19, u16 @21 (0), u16 poll-list number @23 (matches *nnnn*), u16 @25 (6 in every entry seen: perhaps the error code, 6 = no carrier) 🟡. Plain file, not c-tree. Not imported. |
+| LOCAL/TRACE/TRACEn.TXT | text | ExpressNet's own log: an hourly time stamp and internal error lines with source file and line. No line traffic. |
 | LOCAL/REPCTL, RPTQUE, PRINTERS, EDMANPOL | | ❓ (reports, printers, manual polls) |
-| PARAM/SOFTWARE/DD*.* | | phone firmware; text header `name size blocks\r\n`, then what look like download blocks ❓ |
+| PARAM/SOFTWARE/DD*.* | | phone firmware as ready-made `C` download frames, one per CR LF line after a text header `name size blocks`; frame layout in docs/PROTOCOL.md ✅ |
 
 ## PARAM/MISCOPT.DAT — 420 bytes, phone options ("options record")
 

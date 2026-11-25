@@ -132,6 +132,7 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
         raise FileExistsError(f"{db_path} already exists; choose a new file")
     rep = ImportReport()
     con = sqlite3.connect(db_path)
+    cur = None
     try:
         con.executescript(SCHEMA)
         cur = con.cursor()
@@ -214,8 +215,18 @@ def import_xnet(src: str | os.PathLike, db_path: str | os.PathLike, *, include_c
         con.executemany("INSERT INTO meta VALUES (?,?)", meta.items())
         con.commit()
     except BaseException:
+        # close the cursor first: with a statement still open, Windows keeps the file locked
+        # after con.close() and the half-written database could not be removed
+        if cur is not None:
+            cur.close()
         con.close()
-        db_path.unlink(missing_ok=True)
+        try:
+            db_path.unlink(missing_ok=True)
+        except PermissionError:  # Windows: a statement object not yet freed still holds the file
+            import gc
+
+            gc.collect()
+            db_path.unlink(missing_ok=True)
         raise
     con.close()
     return rep

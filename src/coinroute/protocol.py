@@ -106,13 +106,52 @@ def cmd_read_ext(a0: int, a1: int, a2: int, count: int) -> bytes:
 
 
 def cmd_write(addr_hi: int, addr_lo: int, data: bytes) -> bytes:
-    """'S': write bytes to phone memory. ExpressNet sends 1 or 6 data bytes depending on phone type."""
+    """'S' with the first two bytes read as an address (the old reading; see cmd_clear_flags)."""
     return frame(bytes([ord("S"), addr_hi, addr_lo]) + bytes(data))
 
 
-def cmd_security(value: int) -> bytes:
-    """'Q': the security code as a 16-bit value, low byte first."""
-    return frame(bytes([ord("Q"), value & 0xFF, (value >> 8) & 0xFF]))
+def flag_mask(*codes: str, size: int = 8) -> bytes:
+    """A mask over the trouble-flag bytes (COIN.DAT 48-55) with the given flag codes' bits set."""
+    from .xnet import TROUBLE_FLAGS
+
+    known = {c: (off - 48, m) for c, _, off, m in TROUBLE_FLAGS}
+    mask = bytearray(size)
+    for c in codes:
+        i, m = known[c]
+        if i >= size:
+            raise ValueError(f"flag {c} is outside the first {size} flag bytes")
+        mask[i] |= m
+    return bytes(mask)
+
+
+def cmd_clear_flags(mask: bytes) -> bytes:
+    """'S' + a mask over the phone's trouble flags: clear those bits (8 bytes; 3 on A type phones)."""
+    return frame(b"S" + bytes(mask))
+
+
+# the masks ExpressNet sends after each step
+CLEAR_COIN = ("E$",)                 # after reading the cash collected
+CLEAR_BILLING = ("CF", "CL", "CE")   # after collecting billing records
+CLEAR_AUDIT = ("NE",)                # after collecting audit records
+CLEAR_CALL_ACCOUNTING = ("AE",)      # after resetting call accounting
+
+
+def security_code_bytes(code: str | int) -> bytes:
+    """A 4-digit security code as the phone receives it: packed BCD in reading order ("1234" -> 12 34).
+
+    ExpressNet keeps the code in the site record as that 16-bit value and sends its low byte, then
+    its high byte, which is the same two bytes (docs/PROTOCOL.md). An int is taken as its decimal
+    digits, so 1234 and "1234" mean the same code.
+    """
+    digits = f"{code:04d}" if isinstance(code, int) else str(code).strip()
+    if len(digits) != 4 or not digits.isdigit():
+        raise ValueError(f"security code must be 4 digits, not {code!r}")
+    return bytes.fromhex(digits)
+
+
+def cmd_security(code: str | int) -> bytes:
+    """'Q' + the security code (see security_code_bytes)."""
+    return frame(b"Q" + security_code_bytes(code))
 
 
 def cmd_set_clock(t: time.struct_time | None = None) -> bytes:
@@ -137,6 +176,186 @@ def cmd_simple(letter: str) -> bytes:
     if letter not in "ILNORB":
         raise ValueError(f"not an argument-less command: {letter!r}")
     return frame(letter.encode("ascii"))
+
+
+# --- the phone's status ---------------------------------------------------------------------
+# After CONNECT the phone sends one frame by itself. Offsets are into the body (after 'T' and L).
+# Where each comes from, and how sure it is: docs/PROTOCOL.md, "The status frame".
+
+# Offsets are in the newest layout; older phones' statuses are normalised to it first, as
+# ExpressNet does (normalize_status).
+STATUS_FLAGS = slice(1, 10)    # trouble flags; stored unchanged as COIN.DAT bytes 48-56
+STATUS_PHONE = slice(10, 20)   # the phone's own number, 10 ASCII digits
+STATUS_COINS = slice(21, 26)   # running coin total in the phone, cents, 5 ASCII digits (wraps)
+STATUS_TYPE = slice(27, 29)    # two letters, e.g. "DA", "DD", "CD"; "##" = not set
+STATUS_MODEL = slice(29, 33)   # digits after the letters (firmware model, e.g. 7019)
+STATUS_PERCENT = slice(39, 42)  # coin box percent full, 3 ASCII digits
+STATUS_CLOCK = slice(43, 56)   # yymmdd, weekday, hhmmss (13 ASCII digits); absent in short statuses
+STATUS_COLLECTED = slice(57, 62)  # cash collected when the box was last emptied, cents, 5 ASCII digits
+SHORT_STATUS = 0x25            # L of the short status older phones send (no clock)
+# older status formats, by first body byte: where ExpressNet inserts empty bytes, and how many
+STATUS_FORMS = {ord("@"): (4, 5), ord("A"): (2, 7)}
+
+# the type letter's second character -> the site phone types (1-5) ExpressNet accepts for it
+TYPE_ACCEPTS = {"A": {1, 4, 5}, "D": {2, 3, 5}, "C": {1, 2, 3, 4}}
+
+
+def normalize_status(body: bytes) -> bytes:
+    """Bring an older status format to the newest layout by inserting empty bytes, as ExpressNet does."""
+    at, n = STATUS_FORMS.get(body[0], (0, 0)) if body else (0, 0)
+    return bytes(body[:at]) + bytes(n) + bytes(body[at:]) if n else bytes(body)
+
+
+@dataclass
+class Status:
+    body: bytes  # normalised (newest layout)
+    raw: bytes = b""  # as the phone sent it
+
+    @property
+    def phone(self) -> str:
+        return self.body[STATUS_PHONE].decode("latin-1")
+
+    @property
+    def phone_type(self) -> str:
+        return self.body[STATUS_TYPE].decode("latin-1")
+
+    @property
+    def form(self) -> str:
+        """'@' or 'A' for the older formats; the newest format's first byte otherwise."""
+        return chr((self.raw or self.body)[0])
+
+    @property
+    def model(self) -> int | None:
+        """The number after the type letters (e.g. 7019 for a DD7019 phone), if present."""
+        d = self.body[STATUS_MODEL]
+        return int(d) if len(d) == 4 and d.isdigit() else None
+
+    def _number(self, where: slice) -> int | None:
+        d = self.body[where]
+        return int(d) if len(d) == where.stop - where.start and d.isdigit() else None
+
+    @property
+    def coin_total(self) -> int | None:
+        """The phone's running coin total in cents (a 5-digit counter; ExpressNet adds the difference)."""
+        return self._number(STATUS_COINS)
+
+    @property
+    def percent_full(self) -> int | None:
+        return self._number(STATUS_PERCENT)
+
+    @property
+    def cash_collected(self) -> int | None:
+        return self._number(STATUS_COLLECTED)
+
+    @property
+    def flags(self) -> bytes:
+        """The 9 trouble-flag bytes, laid out like COIN.DAT bytes 48-56 (xnet.TROUBLE_FLAGS)."""
+        return self.body[STATUS_FLAGS].ljust(9, b"\0")
+
+    @property
+    def clock(self) -> str | None:
+        """The phone's clock as 'yymmddwhhmmss', or None when the status has none."""
+        c = self.body[STATUS_CLOCK]
+        return c.decode("ascii") if len(c) == 13 and c.isdigit() else None
+
+    def matches(self, *numbers: str) -> bool:
+        """Is this the phone we meant to call? (ExpressNet error 11 when not.)"""
+        return any(self.phone == n[:10] for n in numbers if n)
+
+    def type_ok(self, site_type: int) -> bool:
+        """Does the phone's type agree with the site's type number? (ExpressNet error 12 when not.)"""
+        return site_type in TYPE_ACCEPTS.get(self.phone_type[1:2], set())
+
+
+def parse_status(body: bytes) -> Status:
+    norm = normalize_status(body)
+    if len(norm) < STATUS_TYPE.stop:
+        raise ProtocolError(f"status string not complete ({len(body)} bytes)")
+    return Status(norm, bytes(body))
+
+
+def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, flags: bytes = b"",
+                model: int | None = 7019, coin_total: int = 0, percent_full: int = 0,
+                cash_collected: int = 0) -> bytes:
+    """A newest-format status body with the known fields filled in (simulator, tests). Unknown bytes are 0."""
+    b = bytearray(STATUS_COLLECTED.stop if clock else 36)
+    b[STATUS_COINS] = f"{coin_total % 100000:05d}".encode("ascii")
+    b[0] = ord("S")  # assumed: the newest format's first byte is not known (older ones use '@' / 'A')
+    b[1:1 + len(flags)] = flags
+    b[STATUS_PHONE] = phone.encode("ascii")[:10].ljust(10, b"0")
+    b[STATUS_TYPE] = phone_type.encode("ascii")[:2]
+    if model is not None:
+        b[STATUS_MODEL] = f"{model:04d}".encode("ascii")
+    if clock:
+        b[STATUS_PERCENT] = f"{percent_full:03d}".encode("ascii")
+        b[STATUS_CLOCK] = clock.encode("ascii")
+        b[STATUS_COLLECTED] = f"{cash_collected % 100000:05d}".encode("ascii")
+    return bytes(b)
+
+
+# --- reading memory and call records ---------------------------------------------------------
+# A read reply is not checked for 'G': its data follows an echo of the command (the letter and
+# its argument bytes), so it starts at body byte 4 after 'D' and byte 5 after 'X'.
+READ_DATA = {ord("D"): 4, ord("X"): 5}
+
+CDR_COUNTS = 0x0FF8           # 8 bytes: billing (first, count) twice, then audit (first, count) twice
+BILLING_RECORD, BILLING_SLOTS, BILLING_PER_READ = 45, 52, 5    # ring of 52 x 45 bytes, 5 per read
+AUDIT_RECORD, AUDIT_SLOTS, AUDIT_PER_READ = 23, 125, 10        # ring of 125 x 23 bytes, 10 per read
+
+
+@dataclass
+class CdrCounts:
+    billing_first: int
+    billing_count: int
+    audit_first: int
+    audit_count: int
+    billing_ok: bool  # both copies agree and the numbers fit the ring
+    audit_ok: bool
+
+
+def parse_cdr_counts(data: bytes) -> CdrCounts:
+    if len(data) < 8:
+        raise ProtocolError(f"CDR counts need 8 bytes, got {len(data)}")
+    b1, b2, a1, a2 = data[0:2], data[2:4], data[4:6], data[6:8]
+    return CdrCounts(
+        b1[0], b1[1], a1[0], a1[1],
+        b1 == b2 and b1[0] <= BILLING_SLOTS and b1[1] <= BILLING_SLOTS,
+        a1 == a2 and a1[0] <= AUDIT_SLOTS and a1[1] <= AUDIT_SLOTS,
+    )
+
+
+def billing_base(phone_type: str) -> int:
+    return 0x2000 if phone_type == "CA" else 0x3000
+
+
+def audit_base(phone_type: str, model: int | None) -> int:
+    return 0x3E00 if phone_type == "CD" and model is not None and model < 4204 else 0x3A00
+
+
+def ring_reads(base: int, size: int, slots: int, first: int, count: int, ok: bool = True) -> list[tuple[int, int]]:
+    """(address, records) runs to read `count` records from slot `first` of a ring, wrapping at the end.
+
+    When the counts can't be trusted (`ok` false) ExpressNet reads the whole ring from slot 0.
+    """
+    if not ok:
+        first, count = 0, slots
+    first, count = min(first, slots), min(count, slots)
+    head = min(count, slots - first)
+    runs = [(base + first * size, head)] if head else []
+    if count > head:
+        runs.append((base, count - head))
+    return runs
+
+
+def record_reads(runs: list[tuple[int, int]], size: int, per_read: int) -> list[tuple[int, int]]:
+    """Split (address, records) runs into the (address, bytes) reads ExpressNet makes."""
+    out = []
+    for addr, n in runs:
+        while n > 0:
+            k = min(n, per_read)
+            out.append((addr, k * size))
+            addr, n = addr + k * size, n - k
+    return out
 
 
 # --- talking to a phone ---------------------------------------------------------------------
@@ -194,14 +413,44 @@ class Link:
 
     # convenience wrappers
     def read_memory(self, addr: int, count: int) -> bytes:
-        reply = self.command(cmd_read(addr >> 8, addr & 0xFF, count))
-        return reply.body[1:]
+        """'D': `count` bytes at a 16-bit address."""
+        reply = self.command(cmd_read(addr >> 8, addr & 0xFF, count), need_ack=False)
+        return self._read_data(reply, ord("D"), count)
+
+    def read_memory_ext(self, addr: int, count: int) -> bytes:
+        """'X': `count` bytes at a 24-bit address (phones with more memory)."""
+        reply = self.command(cmd_read_ext(addr >> 16, (addr >> 8) & 0xFF, addr & 0xFF, count),
+                             need_ack=False)
+        return self._read_data(reply, ord("X"), count)
+
+    @staticmethod
+    def _read_data(reply: Frame, letter: int, count: int) -> bytes:
+        data = reply.body[READ_DATA[letter]:]
+        if len(data) < count:
+            raise ProtocolError(f"read refused or reply too short ({len(data)} of {count} bytes, "
+                                f"reply {reply.body[:1]!r})")
+        return data[:count]
+
+    def clear_flags(self, *codes: str, size: int = 8) -> None:
+        self.command(cmd_clear_flags(flag_mask(*codes, size=size)))
+
+    def cdr_counts(self) -> CdrCounts:
+        return parse_cdr_counts(self.read_memory(CDR_COUNTS, 8))
 
     def write_memory(self, addr: int, data: bytes) -> None:
         self.command(cmd_write(addr >> 8, addr & 0xFF, data))
 
-    def security(self, value: int) -> None:
-        self.command(cmd_security(value))
+    def security(self, code: str | int) -> None:
+        self.command(cmd_security(code))
+
+    def receive_status(self, timeout: float | None = None) -> Status:
+        """The status frame a phone sends by itself after CONNECT (ExpressNet's "Receive phone status")."""
+        f = self.receive(timeout)
+        if f is None:
+            raise ProtocolError("no status from the phone (sync character not detected)")
+        if not f.ok:
+            raise ProtocolError("status string checksum bad")
+        return parse_status(f.body)
 
     def set_clock(self, t: time.struct_time | None = None) -> None:
         self.command(cmd_set_clock(t))

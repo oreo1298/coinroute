@@ -235,6 +235,7 @@ def site_record(r: bytes) -> dict:
         "zip": cstr(r[1066:1077]).rstrip("- "),
         "firmware_current": cstr(r[1250:1263]),
         "firmware_target": cstr(r[1263:1276]),
+        "security_code": site_security_code(r),
         "raw": r,
     }
 
@@ -282,6 +283,36 @@ def port_record(r: bytes) -> dict:
     }
 
 
+def site_security_code(r: bytes) -> str | None:
+    """The 4-digit code ExpressNet sends with 'Q', stored at 1278 as packed BCD ("1234" = 12 34)."""
+    if len(r) < 1280:
+        return None
+    digits = r[1278:1280].hex()
+    return digits if digits.isdigit() else None
+
+
+def port_settings(r: bytes) -> dict:
+    """The rest of a PORTS.DAT record, decoded on read (FORMATS.md): PBX codes, speeds, framing."""
+    if len(r) < 311:
+        return {}
+    framing = cstr(r[308:311])
+    return {
+        "pbx_local": cstr(r[246:258]).strip(),   # dialled first for a local trunk
+        "pbx_long": cstr(r[258:270]).strip(),    # ... for a long-distance trunk
+        "polling_speed": cstr(r[270:275]),       # bps for outgoing calls, e.g. "1200"
+        "port_speed": cstr(r[275:280]),          # probably the PC-to-modem speed, e.g. "9600"
+        "framing": framing,                      # parity, data bits, stop bits, e.g. "N82"
+    }
+
+
+def framing_text(f: str) -> str:
+    """'N82' -> '8 bits, no parity, 2 stop bits'."""
+    if len(f) != 3:
+        return f
+    parity = {"N": "no parity", "E": "even parity", "O": "odd parity"}.get(f[0], f"parity {f[0]}")
+    return f"{f[1]} bits, {parity}, {f[2]} stop bit{'s' if f[2] != '1' else ''}"
+
+
 def group_record(r: bytes) -> dict:
     """LOCAL/GROUPS.DAT (22 bytes)."""
     return {"group_no": cstr(r[1:8]), "raw": r}
@@ -295,6 +326,14 @@ def poll_list_record(r: bytes) -> dict:
         "start_time": cstr(r[79:85]),
         "raw": r,
     }
+
+
+WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+
+def poll_list_days(r: bytes) -> list[str]:
+    """The weekdays a poll list runs on: seven u16 flags at 91, Sunday first (the editor's order)."""
+    return [d for i, d in enumerate(WEEKDAYS) if len(r) >= 93 + 2 * i and r[91 + 2 * i]]
 
 
 def user_record(r: bytes) -> dict:

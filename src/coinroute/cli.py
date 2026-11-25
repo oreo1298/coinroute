@@ -56,6 +56,27 @@ def cmd_demo(a):
     print(f"Next: coinroute import {x} demo.db")
 
 
+def cmd_report(a):
+    """Write a Coin or Trouble report as HTML (print it from a browser, or use the GUI)."""
+    from .db import RouteDB
+    from .reports import coin_report_html, default_period, trouble_report_html
+
+    with RouteDB(a.db) as db:
+        start, end = default_period(db.meta().get("data_end"), a.days or (7 if a.kind == "coin" else 1))
+        start, end = a.start or start, a.end or end
+        company = (db.system() or {}).get("company")
+        if a.kind == "coin":
+            html = coin_report_html(db.coin_report(start, end), company)
+        else:
+            codes = [c.strip().upper() for c in a.flags.split(",")] if a.flags else None
+            html = trouble_report_html(db.trouble_report(start, end, codes), company)
+    if a.out:
+        Path(a.out).write_text(html, encoding="utf-8")
+        print(f"Wrote {a.out}")
+    else:
+        sys.stdout.write(html)
+
+
 def cmd_probe(a):
     """Call one phone, send its security code, read some memory, hang up (bench tool)."""
     from .modem import GENERIC, UPMS1200, Modem, ModemError, SerialLine
@@ -72,6 +93,8 @@ def cmd_probe(a):
         print(f"{r.result}")
         link = m.link(timeout=a.reply_timeout)
         try:
+            st = link.receive_status()
+            print(f"status: phone {st.phone}, type {st.phone_type}, clock {st.clock or '(none)'}")
             if a.code is not None:
                 link.security(a.code)
                 print("security code accepted")
@@ -123,12 +146,22 @@ def main(argv=None):
     p.add_argument("--calls", action="store_true", help="include individual call records (large)")
     p.set_defaults(func=cmd_export_csv)
 
+    p = sub.add_parser("report", help="write a Coin or Trouble report (HTML, ready to print)")
+    p.add_argument("kind", choices=("coin", "trouble"))
+    p.add_argument("db")
+    p.add_argument("--days", type=int, help="days back from the end of the data (default 7 coin, 1 trouble)")
+    p.add_argument("--from", dest="start", metavar="'YYYY-MM-DD HH:MM'", help="start of the period")
+    p.add_argument("--to", dest="end", metavar="'YYYY-MM-DD HH:MM'", help="end of the period")
+    p.add_argument("--flags", help="trouble report: only these flag codes, e.g. RJ,HG,LB")
+    p.add_argument("--out", help="HTML file to write (default: print to the screen)")
+    p.set_defaults(func=cmd_report)
+
     p = sub.add_parser("probe", help="(experimental) call one phone through the modem and read its memory")
     p.add_argument("number", help="phone number to dial")
     p.add_argument("--port", required=True, help="serial device of the modem, e.g. /dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=1200)
     p.add_argument("--generic", action="store_true", help="a generic Hayes modem (300 bps), not the UPMS1200")
-    p.add_argument("--code", type=int, help="security code value to send first (see docs/PROTOCOL.md)")
+    p.add_argument("--code", help="the site's 4-digit security code, sent first (see docs/PROTOCOL.md)")
     p.add_argument("--read", nargs=2, metavar=("ADDR", "COUNT"), default=["0FF8", "8"],
                    help="memory to read: hex address and byte count (default 0FF8 8)")
     p.add_argument("--dial-timeout", type=float, default=60.0)

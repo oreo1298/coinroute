@@ -250,3 +250,36 @@ def test_options_record_security_codes():
     assert f["description"] == "Standard options"
     assert [f[f"code_{k}"] for k, _, _ in xnet.SECURITY_CODES] == ["4821", "1735", "2468", "9062", "0000"]
     assert xnet.named_record(r)["name"] == "STANDARD"
+
+
+def test_poll_list_days():
+    from coinroute.demo import poll_list
+    assert xnet.poll_list_days(poll_list("N", "nightly", "01:00")) == xnet.WEEKDAYS
+    assert xnet.poll_list_days(poll_list("W", "weekdays", "08:00", days="-MTWTF-")) == ["Mon", "Tue", "Wed", "Thu",
+                                                                                           "Fri"]
+
+
+def test_port_settings():
+    from coinroute.demo import modem, port
+
+    r = bytearray(port(1, modem("UPMS1200", "Protel", "ATZ", "ATA", ("ATDT", "", ""), "ATZ"), "555-0100"))
+    r[246:258] = b"9,\0".ljust(12, b"\0")
+    r[258:270] = b"     \x00600\x00N8"  # blanks, then leftovers from an older layout (seen in real files)
+    got = xnet.port_settings(bytes(r))
+    assert got == {"pbx_local": "9,", "pbx_long": "", "polling_speed": "1200", "port_speed": "9600",
+                   "framing": "N82"}
+    assert xnet.framing_text("N82") == "8 bits, no parity, 2 stop bits"
+    assert xnet.framing_text("E71") == "7 bits, even parity, 1 stop bit"
+    assert xnet.port_settings(b"short") == {}
+
+
+def test_site_security_code_is_packed_bcd():
+    from coinroute.demo import site
+
+    r = site("5550100123", "TEST SITE", security_code="4821")
+    assert r[1278:1280] == b"\x48\x21"
+    assert xnet.site_record(r)["security_code"] == "4821"
+    assert xnet.site_security_code(r[:1000]) is None
+    bad = bytearray(r)
+    bad[1278] = 0x4A  # not a decimal digit pair
+    assert xnet.site_security_code(bytes(bad)) is None

@@ -3,14 +3,15 @@ import importlib.util
 import io
 import os
 import threading
-import tty
 from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
-from coinroute import protocol as p
-from coinroute.simphone import SimPhone
+tty = pytest.importorskip("tty", reason="serial_tap.py uses termios (POSIX only)")
+
+from coinroute import protocol as p  # noqa: E402
+from coinroute.simphone import SimPhone  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs ptys")
 
@@ -38,7 +39,7 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
     for fd in (pc_s, mo_s):
         tty.setraw(fd)
     log_path = tmp_path / "poll.log"
-    log = open(log_path, "w")
+    log = open(log_path, "w", encoding="ascii")
     t = threading.Thread(target=tap.tap, args=(pc_m, mo_m, log, True), daemon=True)
     t.start()
 
@@ -47,8 +48,8 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
     os.write(mo_s, b"\r\nCONNECT 1200\r\n")
     assert b"CONNECT" in read_until(pc_s, b"1200")
 
-    phone = SimPhone(security_code=42)
-    os.write(pc_s, p.cmd_security(42))
+    phone = SimPhone(security_code="4821")
+    os.write(pc_s, p.cmd_security("4821"))
     os.write(mo_s, phone.feed(_frame_from(mo_s)))
     reply = os.read(pc_s, 64)
     assert list(p.FrameReader().feed(reply))[0].is_ack
@@ -57,14 +58,14 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
         os.close(fd)
     t.join(3)
     log.close()
-    text = log_path.read_text()
+    text = log_path.read_text(encoding="ascii")
     assert "PC>MODEM" in text and "MODEM>PC" in text
 
     out = io.StringIO()
     with redirect_stdout(out):
         tap.decode(str(log_path))
     lines = out.getvalue().splitlines()
-    assert any("PC>MODEM 'Q'" in ln and "51 2a 00" in ln for ln in lines)
+    assert any("PC>MODEM 'Q'" in ln and "51 48 21" in ln for ln in lines)
     assert any("MODEM>PC 'G'" in ln for ln in lines)
     for fd in (pc_m, mo_m):
         os.close(fd)

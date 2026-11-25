@@ -18,7 +18,14 @@ from os import PathLike
 from pathlib import Path
 
 from .fields import phone_display
-from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields
+from .xnet import (
+    call_accounting_counters,
+    call_detail,
+    coin_extras,
+    options_fields,
+    poll_list_days,
+    port_settings,
+)
 
 FMT = "%Y-%m-%d %H:%M"
 OK_DAYS = 2  # last good poll at most this many days before the data ends -> "OK"
@@ -378,6 +385,89 @@ class RouteDB:
             r["minutes"] = sum(c["minutes"] for c in cats)
         return rows
 
+    # --- reports ------------------------------------------------------------------------------
+
+    def report_sites(self) -> list[dict]:
+        return self._all("SELECT phone, description, group_no FROM sites ORDER BY group_no, phone")
+
+    def _polls_between(self, start: str, end: str) -> dict[str, list[dict]]:
+        by_phone: dict[str, list[dict]] = {}
+        for r in self._all(
+            "SELECT phone, at, coin_total_cents, cash_box_cents, raw FROM coin_polls "
+            "WHERE at >= ? AND at <= ? ORDER BY phone, at, id", start, end
+        ):
+            r.update(coin_extras(r.pop("raw") or b""))
+            by_phone.setdefault(r["phone"], []).append(r)
+        return by_phone
+
+    def coin_report(self, start: str, end: str) -> dict:
+        """ExpressNet's Coin Report for polls between `start` and `end` ('YYYY-MM-DD HH:MM').
+
+        Per site: coins taken in the period (growth of the lifetime total since the last poll
+        before it), average per day, polls in the period, money emptied, cash in box at the last
+        poll, and coins in the last 24 hours. `anomaly` marks a lifetime total that went down.
+        """
+        t0, t1 = _t(start), _t(end)
+        days = max(1, round((t1 - t0).total_seconds() / 86400))
+        polls = self._polls_between(start, end)
+        rows = []
+        for s in self.report_sites():
+            ps = polls.get(s["phone"], [])
+            row = {**s, "phone_display": phone_display(s["phone"]), "polls": len(ps), "days": days}
+            if not ps:
+                rows.append({**row, "active": False})
+                continue
+            before = self._one(
+                "SELECT coin_total_cents FROM coin_polls WHERE phone=? AND at < ? ORDER BY at DESC LIMIT 1",
+                s["phone"], start,
+            )
+            base = before["coin_total_cents"] if before else ps[0]["coin_total_cents"]
+            totals = [base] + [p["coin_total_cents"] for p in ps]
+            anomaly = any(b < a for a, b in zip(totals, totals[1:]))
+            total = max(0, ps[-1]["coin_total_cents"] - base)
+            last = ps[-1]
+            day_ago = (_t(last["at"]) - _dt.timedelta(hours=24)).strftime(FMT)
+            ref = self._one(
+                "SELECT coin_total_cents FROM coin_polls WHERE phone=? AND at <= ? ORDER BY at DESC LIMIT 1",
+                s["phone"], day_ago,
+            )
+            last24 = max(0, last["coin_total_cents"] - ref["coin_total_cents"]) if ref else None
+            rows.append({
+                **row, "active": True, "total_cents": total, "avg_per_day_cents": total / days,
+                "collected_cents": sum(p["amount_collected_cents"] for p in ps),
+                "cash_box_cents": last["cash_box_cents"], "last_24h_cents": last24, "anomaly": anomaly,
+                "short": len({p["at"][:10] for p in ps}) < days,
+            })
+        active = [r for r in rows if r["active"]]
+        totals = {
+            "phones": len(rows),
+            "total_cents": sum(r["total_cents"] for r in active),
+            "avg_per_day_cents": sum(r["avg_per_day_cents"] for r in active),
+            "collected_cents": sum(r["collected_cents"] for r in active),
+            "cash_box_cents": sum(r["cash_box_cents"] for r in active),
+            "last_24h_cents": sum(r["last_24h_cents"] or 0 for r in active),
+        }
+        return {"start": start, "end": end, "days": days, "rows": rows, "totals": totals}
+
+    def trouble_report(self, start: str, end: str, codes: list[str] | None = None) -> dict:
+        """ExpressNet's Trouble Report: every poll in the period with trouble flags (only `codes`
+        if given), and the sites that did not answer at all in the period."""
+        polls = self._polls_between(start, end)
+        wanted = set(codes) if codes else None
+        rows = []
+        for s in self.report_sites():
+            ps = polls.get(s["phone"], [])
+            base = {**s, "phone_display": phone_display(s["phone"])}
+            if not ps:
+                rows.append({**base, "at": None, "flags": [], "cash_box_cents": None, "no_comms": True})
+                continue
+            for p in ps:
+                flags = [f for f in p["flags"] if wanted is None or f in wanted]
+                if flags:
+                    rows.append({**base, "at": p["at"], "flags": flags, "cash_box_cents": p["cash_box_cents"],
+                                 "no_comms": False})
+        return {"start": start, "end": end, "codes": sorted(wanted) if wanted else None, "rows": rows}
+
     # --- settings -----------------------------------------------------------------------------
 
     def system(self) -> dict | None:
@@ -387,10 +477,13 @@ class RouteDB:
         return self._all("SELECT user, description, password FROM users ORDER BY rowid")
 
     def ports(self) -> list[dict]:
-        return self._all(
+        rows = self._all(
             "SELECT port_no, modem_name, modem_description, line_number, init, answer, "
-            "dial_1, dial_2, dial_3, reset FROM ports ORDER BY port_no"
+            "dial_1, dial_2, dial_3, reset, raw FROM ports ORDER BY port_no"
         )
+        for r in rows:
+            r.update(port_settings(r.pop("raw") or b""))
+        return rows
 
     def modems(self) -> list[dict]:
         return self._all(
@@ -398,7 +491,12 @@ class RouteDB:
         )
 
     def poll_lists(self) -> list[dict]:
-        return self._all("SELECT name, description, start_time FROM poll_lists ORDER BY rowid")
+        rows = self._all("SELECT name, description, start_time, raw FROM poll_lists ORDER BY rowid")
+        for r in rows:
+            days = poll_list_days(r.pop("raw") or b"")
+            r["days"] = days
+            r["days_text"] = "every day" if len(days) == 7 else (", ".join(days) or "no days")
+        return rows
 
     def group_table(self) -> list[dict]:
         """Groups with how many sites each holds (groups used by sites but not defined are included)."""

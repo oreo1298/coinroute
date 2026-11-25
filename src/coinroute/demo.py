@@ -187,6 +187,7 @@ def site(
     address: str = "1 MAIN ST",
     zip_code: str = "99999-    ",
     firmware_target: str | None = None,
+    security_code: str = "0000",
 ) -> bytes:
     """SITES/SITES.DAT record (2456 bytes)."""
     r = bytearray(2456)
@@ -205,6 +206,7 @@ def site(
     put(r, 1066, zip_code, 11)
     put(r, 1250, firmware, 13)
     put(r, 1263, firmware_target or firmware, 13)
+    r[1278:1280] = bytes.fromhex(security_code)  # packed BCD, as ExpressNet stores it
     return bytes(r)
 
 
@@ -241,12 +243,16 @@ def modem(name: str, desc: str, init: str, answer: str, dials: tuple[str, str, s
     return bytes(r)
 
 
-def port(no: int, modem_rec: bytes, line: str) -> bytes:
+def port(no: int, modem_rec: bytes, line: str, speed: str = "1200") -> bytes:
     """LOCAL/PORTS.DAT record (313 bytes): a copy of a modem profile plus the port's line."""
     r = bytearray(313)
     r[1] = no
     r[3 : 3 + 229] = modem_rec[1:230]  # the port keeps its own copy of the modem strings
     put(r, 232, line, 14)
+    put(r, 270, speed, 5)  # polling speed
+    put(r, 275, "9600", 5)
+    r[308:311] = b"N82"  # three one-character fields: parity, data bits, stop bits
+    r[311] = r[312] = 1
     return bytes(r)
 
 
@@ -256,11 +262,15 @@ def group(no: str) -> bytes:
     return bytes(r)
 
 
-def poll_list(name: str, desc: str, start: str) -> bytes:
+def poll_list(name: str, desc: str, start: str, number: int = 1, days: str = "SMTWTFS") -> bytes:
+    """LOCAL/POLLIST.DAT record; `days` marks Sunday..Saturday (a '-' leaves that day out)."""
     r = bytearray(231)
     put(r, 1, name, 13)
     put(r, 14, desc, 61)
+    struct.pack_into("<I", r, 75, number)
     put(r, 79, start, 6)
+    for i, c in enumerate(days[:7]):
+        struct.pack_into("<H", r, 91 + 2 * i, 0 if c == "-" else 1)
     return bytes(r)
 
 
@@ -586,6 +596,7 @@ def make_demo(
             state=s.state,
             firmware=fw,
             firmware_target="DD7019-0023R",
+            security_code="4821",  # the options records' access code
             site_no=s.site_no,
             rate=rate_names[s.state],
             options="NIGHT-POLL" if s.i % 3 else "STANDARD",
@@ -642,16 +653,16 @@ def make_demo(
     )
     (x / "PARAM/MODEMS.DAT").write_bytes(fixed_file(230, [upms, generic]))
     (x / "LOCAL/PORTS.DAT").write_bytes(
-        fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101")])
+        fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101", "300")])
     )
     (x / "LOCAL/GROUPS.DAT").write_bytes(fixed_file(22, [group(g) for g in GROUPS]))
     (x / "LOCAL/POLLIST.DAT").write_bytes(
         fixed_file(
             231,
             [
-                poll_list("NIGHTLY", "Every phone, every night", "01:00"),
-                poll_list("MORNING", "Re-poll phones that failed overnight", "08:00"),
-                poll_list("INCOMING", "Window for phones that call in", "03:00"),
+                poll_list("NIGHTLY", "Every phone, every night", "01:00", 1),
+                poll_list("MORNING", "Re-poll phones that failed overnight", "08:00", 2, "-MTWTF-"),
+                poll_list("INCOMING", "Window for phones that call in", "03:00", 3, "-------"),
             ],
         )
     )

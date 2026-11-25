@@ -5,7 +5,7 @@ import sys
 import textwrap
 
 CORE = ["ctree", "fields", "scramble", "xnet", "importer", "report", "cli", "db", "demo",
-        "protocol", "simphone", "modem"]
+        "protocol", "simphone", "modem", "reports"]
 
 
 def run_without_qt(code: str) -> subprocess.CompletedProcess:
@@ -40,7 +40,7 @@ def test_core_sources_have_no_top_level_qt_imports():
 
     src = Path(__file__).parent.parent / "src" / "coinroute"
     for m in CORE:
-        tree = ast.parse((src / f"{m}.py").read_text())
+        tree = ast.parse((src / f"{m}.py").read_text(encoding="utf-8"))
         for node in tree.body:  # module level only; cli imports the GUI lazily
             names = (
                 [a.name for a in node.names]

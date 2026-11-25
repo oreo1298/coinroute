@@ -253,6 +253,7 @@ class Modem:
         self.rx_t = 0.0
         self.unknown_seen = set()
         self.far_end = None             # optional callable: bytes from the PC while online -> reply bytes
+        self.far_end_greeting = None    # optional callable: bytes the far end sends right after CONNECT
         self.set_carrier(False, quiet=True)
 
     # -- settings ----------------------------------------------------------
@@ -546,6 +547,8 @@ class Modem:
         self.set_carrier(True)
         self.result(self.connect_text())
         self.log.note("ONLINE - everything ExpressNet sends now is meant for the payphone")
+        if self.far_end_greeting:
+            self.send(self.far_end_greeting(), "phone")
 
     def hangup(self, why):
         was = self.call_up or self.mode in ("dialing", "answering", "online")
@@ -756,8 +759,8 @@ def main(argv=None):
                     help="answer ERROR to commands this fake doesn't know (default OK)")
     ap.add_argument("--no-plus-ok", action="store_true",
                     help="don't answer OK to +++ sent while already in command mode")
-    ap.add_argument("--simphone", type=int, metavar="CODE",
-                    help="answer as a simulated payphone (coinroute.simphone) with this security code")
+    ap.add_argument("--simphone", metavar="CODE",
+                    help="answer as a simulated payphone (coinroute.simphone) with this 4-digit security code")
     ap.add_argument("--log", metavar="FILE", help="log file (default fake_upms_YYYYmmdd_HHMMSS.log)")
     ap.add_argument("--quiet", action="store_true", help="log to the file only, not the screen")
     ap.add_argument("--version", action="version", version=f"fake_upms {VERSION}")
@@ -800,7 +803,9 @@ def main(argv=None):
     if o.simphone is not None:
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
         from coinroute.simphone import SimPhone
-        modem.far_end = SimPhone(security_code=o.simphone).feed
+        phone = SimPhone(security_code=o.simphone)
+        modem.far_end = phone.feed
+        modem.far_end_greeting = phone.greeting
         log.note(f"a simulated payphone answers after CONNECT (security code {o.simphone})")
     running = [True]
 
