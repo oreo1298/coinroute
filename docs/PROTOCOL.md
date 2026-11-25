@@ -270,6 +270,15 @@ From PHBILAUD.C; addresses and sizes are ExpressNet's constants.
 - `simphone.SimModemLine` — a modem with a simulated phone behind it, in
   process, on any platform (the poller's tests and `--simulate`).
 
+## Call accounting (partly mapped)
+
+PHCALACT.C sends `R` (reset call accounting, errors 69/71) and `B`, both
+answered with `'G'`, reads 2 bytes at `2E06` with `D`, and copies seven
+blocks of 153 bytes out of read replies (data from body byte 4) into its
+call-accounting buffer. Which addresses those seven reads use, and how the
+1,071 bytes map onto CALLACCT.DAT's 83 categories, is still ❓; coinroute's
+poller doesn't collect call accounting yet.
+
 ## What a real capture must settle
 
 One logged poll of a real phone by ExpressNet (the bytes between the PC and the
