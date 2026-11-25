@@ -3,14 +3,15 @@ import importlib.util
 import io
 import os
 import threading
-import tty
 from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
-from coinroute import protocol as p
-from coinroute.simphone import SimPhone
+tty = pytest.importorskip("tty", reason="serial_tap.py uses termios (POSIX only)")
+
+from coinroute import protocol as p  # noqa: E402
+from coinroute.simphone import SimPhone  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs ptys")
 

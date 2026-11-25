@@ -4,14 +4,14 @@ import argparse
 import os
 import subprocess
 import sys
-import termios
 import time
-import tty
 import unittest
 
-import pytest  # noqa: E402
+import pytest
 
-pytest.importorskip("fcntl", reason="fake_upms.py is a POSIX tool (ptys, termios)")
+termios = pytest.importorskip("termios", reason="fake_upms.py is a POSIX tool (ptys, termios)")
+import tty  # noqa: E402
+
 TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
 sys.path.insert(0, TOOLS)
 import fake_upms as fu  # noqa: E402
