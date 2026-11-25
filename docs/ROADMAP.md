@@ -187,11 +187,13 @@ error codes and stores it in the route database (coin_polls / comm_errors,
 plus coinroute's own `polls` table with the raw status frame and call log);
 lifetime coins and cash in box follow the phone's 5-digit counter (wraps and
 resets handled). `coinroute poll DB PHONE --port DEV | --simulate`, and
-Modems → Manual Polling in the terminal version. `simphone.SimModemLine`
-simulates modem and phone in-process. **Next:** the first real poll (with
-`tools/serial_tap.py` recording), clearing call records (`T`/`K` arguments),
-call accounting, poll lists on a schedule, incoming calls, a "Poll now"
-button in the desktop app.
+Modems → Manual Polling in the terminal version; Poll now in the desktop
+app. `simphone.SimModemLine` simulates modem and phone in-process.
+`coinroute.autopoll` runs the poll lists on their schedule (`coinroute
+autopoll`, and Stop/Restart Auto Poll in the terminal version). **Next:** the
+first real poll (with `tools/serial_tap.py` recording), clearing call records
+(`T`/`K` arguments), call accounting, incoming calls, running auto polling as
+a system service.
 
 The original plan:
 

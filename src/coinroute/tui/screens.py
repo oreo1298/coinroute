@@ -297,6 +297,7 @@ class Route:
 
     def group_report(self) -> Table:
         cols = [Col("Group", "group_no", 8), Col("Sites", "sites", 6, right=True),
+                Col("Poll list", "poll_list", 12),
                 Col("In group file", lambda r: "yes" if r["defined"] else "no", 13)]
         return Table("GROUPS", cols, self.db.group_table())
 
@@ -323,17 +324,23 @@ class Route:
     def auto_menu(self) -> Menu:
         return Menu("AUTO POLLING", [
             Item("Edit Polling List", "Polling lists, their start times and days", self.poll_lists),
-            Item("Stop/Restart Auto Poll", "Start or stop the scheduled polling",
-                 lambda: "Scheduled polling isn't running in coinroute yet; " + NOT_YET),
+            Item("Stop/Restart Auto Poll", "Start or stop the scheduled polling", self.autopoll_screen),
             Item("View/Repoll Polling Failures", "Recent failed calls", self.failures),
             Item("Group/Polling List Report", "Groups and their sites", self.group_report),
             Item("Return", "Back to the modems menu"),
         ])
 
     def poll_lists(self) -> Table:
-        cols = [Col("List", "name", 12), Col("Description", "description", 30), Col("Starts", "start_time", 6),
-                Col("Days", "days_text", 24)]
-        return Table("POLLING LISTS", cols, self.db.poll_lists())
+        cols = [Col("No", "number", 3, right=True), Col("List", "name", 11), Col("Starts", "start_time", 6),
+                Col("Days", "days_text", 22), Col("Groups", lambda r: " ".join(r["groups"]), 14),
+                Col("Phones", lambda r: len(r["phones"]), 6, right=True)]
+        return Table("POLLING LISTS", cols, self.db.poll_plan(),
+                     on_enter=lambda r: r["description"] or r["name"])
+
+    def autopoll_screen(self):
+        if getattr(self, "auto", None) is None:
+            self.auto = AutoPollScreen(self)
+        return self.auto
 
     def manual_poll(self) -> Table:
         return self.site_picker(then=lambda r: self.poll_prompt(r["phone_digits"]),
@@ -525,6 +532,89 @@ class PollScreen(Screen):
         if k == "ESC" and self.done:
             return POP
         return None
+
+
+class AutoPollScreen(Screen):
+    """Start and stop scheduled polling while the program is open (it keeps running in the
+    background when you leave this screen)."""
+
+    def __init__(self, route: Route):
+        self.route = route
+        self.title = "AUTO POLLING"
+        self.lines: list[str] = []
+        self.thread = None
+        self.stop = None
+        self.port = None
+
+    @property
+    def running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    @property
+    def keys(self):
+        return (("ESC", "Back"), ("F2", "Stop" if self.running else "Start"), ("F3", "Run due lists now"))
+
+    def start(self, port: str, baud: int) -> None:
+        import threading
+
+        from ..autopoll import AutoPoller
+        from ..modem import open_line
+        from ..poller import simulated_phone, site_for_poll
+        from ..simphone import SimModemLine
+
+        def line():
+            if port.upper() != "SIM":
+                return open_line(port, baud)
+            with RouteDB(self.route.path) as db:
+                return SimModemLine(simulated_phone(self.route.path, site_for_poll(db, ap.current)))
+
+        stamp = lambda m: self.lines.append(f"{_dt.datetime.now():%H:%M}  {m}")
+        ap = AutoPoller(self.route.path, line, progress=stamp)
+        self.port = port
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=ap.run_forever, args=(self.stop,), daemon=True)
+        self.thread.start()
+
+    def draw(self, c, top: int, height: int) -> None:
+        _, cols = c.size()
+        c.fill(top, 0, height, cols, "normal")
+        c.box(top, 0, height, cols, title=self.title)
+        state = f"RUNNING on {self.port}" if self.running else "STOPPED"
+        c.put(top + 1, 3, f"Auto polling: {state}", "good" if self.running else "title")
+        plan = self.route.db.poll_plan() if self.route.db else []
+        for i, pl in enumerate(plan[:4]):
+            c.put(top + 2 + i, 5, f"{pl['name']:<12} {pl['start_time']:>5}  {pl['days_text']:<26} "
+                  f"{len(pl['phones'])} phones"[: cols - 8], "normal")
+        y = top + 3 + min(4, len(plan))
+        for i, ln in enumerate(self.lines[-(height - (y - top) - 2):]):
+            c.put(y + i, 3, ln[: cols - 6], "bad" if "fail" in ln.lower() else "normal")
+
+    def status(self) -> str:
+        return "Lists run on their days from their start time; F2 starts or stops"
+
+    def key(self, k: str):
+        if k == "F2":
+            if self.running:
+                self.stop.set()
+                self.lines.append("stopping after the current call…")
+                return None
+            from ..poller import PollStore
+
+            with PollStore(self.route.path) as st:
+                port, baud = st.setting("port", "SIM"), st.setting("baud", "9600")
+
+            def done(v):
+                self.start(v[0].strip() or "SIM", int(v[1]) if v[1].strip().isdigit() else 9600)
+
+            return Prompt("START AUTO POLLING", [("Modem port (SIM = simulated phones)", port),
+                                                 ("PC-to-modem speed", baud)], done)
+        if k == "F3" and self.running:
+            self.lines.append("checking for due lists…")
+            self.stop.set()
+            self.thread.join(1)
+            self.start(self.port, 9600)
+            return None
+        return super().key(k)
 
 
 def _flag_names(flags: bytes) -> list[str]:

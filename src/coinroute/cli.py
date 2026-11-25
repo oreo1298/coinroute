@@ -154,6 +154,48 @@ def cmd_poll(a):
     return 0 if out.ok else 1
 
 
+def cmd_autopoll(a):
+    import threading
+
+    from .autopoll import AutoPoller
+    from .db import RouteDB
+    from .modem import GENERIC, UPMS1200, open_line
+    from .poller import simulated_phone, site_for_poll
+    from .simphone import SimModemLine
+
+    if not a.port and not a.simulate:
+        sys.exit("coinroute: give --port DEVICE (the modem's serial port), or --simulate")
+
+    def line_for(phone=None):
+        if not a.simulate:
+            return open_line(a.port, a.baud)
+        with RouteDB(a.db) as db:
+            site = site_for_poll(db, ap.current)
+        return SimModemLine(simulated_phone(a.db, site))
+
+    stamp = lambda m: print(f"{__import__('time').strftime('%H:%M:%S')}  {m}", flush=True)
+    ap = AutoPoller(a.db, line_for, profile=GENERIC if a.generic else UPMS1200, progress=stamp,
+                    retries=a.retries, poller_options={"dial_prefix": a.prefix})
+    for pl in ap.plan():
+        print(f"  list {pl['number']} {pl['name']:<12} {pl['start_time']:>5}  {pl['days_text']:<28} "
+              f"{len(pl['phones'])} phones")
+    if a.list:
+        pl = next((x for x in ap.plan() if str(x["number"]) == a.list or x["name"] == a.list), None)
+        if pl is None:
+            sys.exit(f"coinroute: no poll list {a.list}")
+        ap.run_list(pl)
+        return 0
+    if a.once:
+        ap.run_due()
+        return 0
+    stop = threading.Event()
+    try:
+        ap.run_forever(stop)
+    except KeyboardInterrupt:
+        stop.set()
+    return 0
+
+
 def _flags(st):
     from .xnet import trouble_flags
 
@@ -237,6 +279,18 @@ def main(argv=None):
     p.add_argument("--simulate", action="store_true", help="poll a simulated phone instead (no modem needed)")
     p.add_argument("--dry-run", action="store_true", help="don't save the result")
     p.set_defaults(func=cmd_poll)
+
+    p = sub.add_parser("autopoll", help="run the poll lists on their schedule (until Ctrl-C)")
+    p.add_argument("db", help="route database (made by `coinroute import`)")
+    p.add_argument("--port", help="the modem's serial port (e.g. /dev/ttyUSB0 or COM1)")
+    p.add_argument("--baud", type=int, default=9600, help="PC-to-modem speed (default 9600)")
+    p.add_argument("--generic", action="store_true", help="a generic Hayes modem instead of the UPMS1200")
+    p.add_argument("--prefix", default="", help="dial this before each number")
+    p.add_argument("--retries", type=int, default=1, help="passes over failed phones at the end of a run")
+    p.add_argument("--once", action="store_true", help="run whatever is due now, then stop")
+    p.add_argument("--list", help="run this poll list now (number or name), then stop")
+    p.add_argument("--simulate", action="store_true", help="poll simulated phones instead (no modem needed)")
+    p.set_defaults(func=cmd_autopoll)
 
     p = sub.add_parser("tui", help="start the terminal version (menus like ExpressNet's)")
     p.add_argument("db", nargs="?", help="route database to open (made by `coinroute import`)")

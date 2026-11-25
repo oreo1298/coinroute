@@ -318,6 +318,15 @@ def group_record(r: bytes) -> dict:
     return {"group_no": cstr(r[1:8]), "raw": r}
 
 
+def group_poll_list(r: bytes) -> int | None:
+    """The poll list a group belongs to (byte 11 when byte 8 is set), or None. Probable (FORMATS.md)."""
+    return r[11] if len(r) > 11 and r[8] == 1 and r[11] else None
+
+
+def poll_list_number(r: bytes) -> int | None:
+    return int.from_bytes(r[75:79], "little") if len(r) >= 79 else None
+
+
 def poll_list_record(r: bytes) -> dict:
     """LOCAL/POLLIST.DAT (231 bytes): polling schedules."""
     return {

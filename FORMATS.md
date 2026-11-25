@@ -215,7 +215,7 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 |---|---|---|
 | LOCAL/PORTS.DAT | 313 | port no u8 @1, modem name [21] @3, description [41] @24, init [41] @65, answer [41] @106, three dial strings [21] @147/168/189, reset [21] @210, line number [14] @232 ✅; PBX code for local calls [12] @246 and for long distance [12] @258 🟡 (order of ExpressNet's port editor; empty in the files seen, and two old records keep leftovers of an earlier layout after the NUL); polling speed (bps for outgoing calls, e.g. "1200") [5] @270 🟡; a second speed [5] @275, "9600" in every port seen, probably the PC-to-modem speed ❓; parity, data bits, stop bits as three characters @308 (e.g. `N82`) 🟡; u8 @311 and @312 (1 in every port seen; the editor's incoming/outgoing/Protel-modem switches are candidates) ❓ |
 | PARAM/MODEMS.DAT | 230 | name [21] @1, description [41] @22, init [41] @63, answer [41] @104, dial ×3 [21] @145/166/187, reset [21] @208 ✅ |
-| LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅ |
+| LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅; poll list: byte 8 = 1 and byte 11 = the list's number when the group is in a poll list, else zeros 🟡 (in a real installation the groups marked for list 2 are exactly the groups of that list's failed-call file `POLL0002.BAD`); byte 21 is `0x20` or `*` ❓ |
 | LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; list number u32 @75 🟡; seven u16 day flags @91, Sunday first 🟡 (order of ExpressNet's poll-list editor; nightly lists have all seven set); a timestamp (u32 minutes) @109 and more u16 flags from 113 ❓ |
 | PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; rate tables ❓ |
 | PARAM/MISCOPT.DAT | 420 | options record, see below |

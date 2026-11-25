@@ -81,8 +81,18 @@ coinroute poll route.db 210-555-0108 --port /dev/ttyUSB0   # Windows: --port COM
 coinroute poll route.db 210-555-0108 --simulate            # try it on a simulated phone first
 ```
 
-In the terminal version: Modems → Manual Polling (port `SIM` for the
-simulated phone). **This has not been tried on a real phone yet**: run the
+Auto polling runs ExpressNet's poll lists on their days from their start
+time (each group's list comes from GROUPS.DAT), trying failed phones again
+at the end of a run:
+
+```sh
+coinroute autopoll route.db --port /dev/ttyUSB0      # keeps running; Ctrl-C stops it
+coinroute autopoll route.db --simulate --list NIGHTLY  # one list now, on simulated phones
+```
+
+In the terminal version: Modems → Manual Polling, and Modems → Auto
+Polling → Stop/Restart (F2); in the desktop app: Modems → Poll now (port
+`SIM` for the simulated phone everywhere). **This has not been tried on a real phone yet**: run the
 first real polls while ExpressNet is still at hand, ideally recording the
 line with `tools/serial_tap.py`. Call records are only read with `--cdrs`
 and stay in the phone until the command that clears them is known.
