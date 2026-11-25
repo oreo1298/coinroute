@@ -106,8 +106,34 @@ def cmd_read_ext(a0: int, a1: int, a2: int, count: int) -> bytes:
 
 
 def cmd_write(addr_hi: int, addr_lo: int, data: bytes) -> bytes:
-    """'S': write bytes to phone memory. ExpressNet sends 1 or 6 data bytes depending on phone type."""
+    """'S' with the first two bytes read as an address (the old reading; see cmd_clear_flags)."""
     return frame(bytes([ord("S"), addr_hi, addr_lo]) + bytes(data))
+
+
+def flag_mask(*codes: str, size: int = 8) -> bytes:
+    """A mask over the trouble-flag bytes (COIN.DAT 48-55) with the given flag codes' bits set."""
+    from .xnet import TROUBLE_FLAGS
+
+    known = {c: (off - 48, m) for c, _, off, m in TROUBLE_FLAGS}
+    mask = bytearray(size)
+    for c in codes:
+        i, m = known[c]
+        if i >= size:
+            raise ValueError(f"flag {c} is outside the first {size} flag bytes")
+        mask[i] |= m
+    return bytes(mask)
+
+
+def cmd_clear_flags(mask: bytes) -> bytes:
+    """'S' + a mask over the phone's trouble flags: clear those bits (8 bytes; 3 on A type phones)."""
+    return frame(b"S" + bytes(mask))
+
+
+# the masks ExpressNet sends after each step
+CLEAR_COIN = ("E$",)                 # after reading the cash collected
+CLEAR_BILLING = ("CF", "CL", "CE")   # after collecting billing records
+CLEAR_AUDIT = ("NE",)                # after collecting audit records
+CLEAR_CALL_ACCOUNTING = ("AE",)      # after resetting call accounting
 
 
 def security_code_bytes(code: str | int) -> bytes:
@@ -273,8 +299,8 @@ def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, fl
 READ_DATA = {ord("D"): 4, ord("X"): 5}
 
 CDR_COUNTS = 0x0FF8           # 8 bytes: billing (first, count) twice, then audit (first, count) twice
-BILLING_RECORD, BILLING_SLOTS = 45, 52    # a ring of 52 records of 45 bytes
-AUDIT_RECORD, AUDIT_SLOTS = 23, 125       # a ring of 125 records of 23 bytes
+BILLING_RECORD, BILLING_SLOTS, BILLING_PER_READ = 45, 52, 5    # ring of 52 x 45 bytes, 5 per read
+AUDIT_RECORD, AUDIT_SLOTS, AUDIT_PER_READ = 23, 125, 10        # ring of 125 x 23 bytes, 10 per read
 
 
 @dataclass
@@ -319,6 +345,17 @@ def ring_reads(base: int, size: int, slots: int, first: int, count: int, ok: boo
     if count > head:
         runs.append((base, count - head))
     return runs
+
+
+def record_reads(runs: list[tuple[int, int]], size: int, per_read: int) -> list[tuple[int, int]]:
+    """Split (address, records) runs into the (address, bytes) reads ExpressNet makes."""
+    out = []
+    for addr, n in runs:
+        while n > 0:
+            k = min(n, per_read)
+            out.append((addr, k * size))
+            addr, n = addr + k * size, n - k
+    return out
 
 
 # --- talking to a phone ---------------------------------------------------------------------
@@ -393,6 +430,9 @@ class Link:
             raise ProtocolError(f"read refused or reply too short ({len(data)} of {count} bytes, "
                                 f"reply {reply.body[:1]!r})")
         return data[:count]
+
+    def clear_flags(self, *codes: str, size: int = 8) -> None:
+        self.command(cmd_clear_flags(flag_mask(*codes, size=size)))
 
     def cdr_counts(self) -> CdrCounts:
         return parse_cdr_counts(self.read_memory(CDR_COUNTS, 8))

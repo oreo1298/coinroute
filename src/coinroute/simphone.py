@@ -33,6 +33,9 @@ class SimPhone:
         self.security_code = security_code_bytes(security_code)
         self.phone = phone
         self.phone_type = phone_type
+        self.flags = bytearray(9)  # trouble flags, sent in the status (COIN.DAT 48-56 layout)
+        self.coin_total = 0
+        self.cash_collected = 0
         self.unlocked = False
         self.clock: str | None = None
         self.reader = FrameReader()
@@ -46,7 +49,8 @@ class SimPhone:
 
         t = time.localtime()
         clock = time.strftime("%y%m%d", t) + str((t.tm_wday + 1) % 7 + 1) + time.strftime("%H%M%S", t)
-        return frame(status_body(self.phone, self.phone_type, clock))
+        return frame(status_body(self.phone, self.phone_type, clock, flags=bytes(self.flags),
+                                 coin_total=self.coin_total, cash_collected=self.cash_collected))
 
     # --- one command -> one reply ---
 
@@ -81,9 +85,9 @@ class SimPhone:
         if letter == "X" and len(args) == 4:
             addr, n = (args[0] << 16 | args[1] << 8 | args[2]) & 0xFFFF, args[3]
             return bytes(body) + bytes(self.memory[addr:addr + n])
-        if letter == "S" and len(args) >= 3:
-            addr = args[0] << 8 | args[1]
-            self.memory[addr:addr + len(args) - 2] = args[2:]
+        if letter == "S" and len(args) in (3, 8):  # clear the trouble-flag bits in the mask
+            for i, m in enumerate(args):
+                self.flags[i] &= ~m & 0xFF
             return bytes([ACK])
         if letter in "KT" and len(args) == 2:
             return bytes([ACK])

@@ -138,7 +138,7 @@ poll.
 |---|---|---|---|---|
 | `D` | address high, address low, count | 5 | reading phone memory: CDR counts, audit and billing records, speed dials | ✅ layout, 🟡 meaning of bytes |
 | `X` | three address bytes, count | 6 | the same reads on phones with more memory | ✅ layout |
-| `S` | address high, address low, 1 or 6 data bytes | 5 / 10 | writing phone memory: clear status flags, clear coin flag, reset call accounting, clear CDR flags | ✅ layout |
+| `S` | a mask over the trouble-flag bytes: 8 bytes (3 on A type phones) | 10 / 5 | **clear trouble flags**: the bits set in the mask are cleared | ✅ (below) |
 | `Q` | the 4-digit security code as two packed-BCD bytes in reading order (`1234` → `12 34`) | 4 | security code (errors 13/14 follow it) | ✅ (see below) |
 | `P` | 13 ASCII digits | 15 | set the phone's clock | ✅ layout and order: yymmdd, weekday, hhmmss (the status shows the clock the same way) |
 | `K` | two bytes | 4 | clear audit CDRs | ✅ layout |
@@ -148,11 +148,19 @@ poll.
 | `R` | — | 2 | call-accounting step | 🟡 |
 | `B` | — | 2 | speed dials | 🟡 |
 
-Addresses seen in ExpressNet's commands (meanings 🟡, taken from the step that
-uses them): an 8-byte read at 0FF8 when collecting CDR counts; a 4-byte read
-at FF1F and a write of 3F at DA1F when clearing status flags; a write of 00 at
-0100 to clear the coin flag; writes at 0020 to reset call accounting; a 2-byte
-read at 2E06 for speed dials.
+`S` is not a memory write, as first thought. Its bytes line up with the
+trouble-flag bytes (COIN.DAT 48–55), and each step sends exactly the bits of
+its own flags: ✅
+
+| After | `S` bytes | Flags cleared |
+|---|---|---|
+| reading the cash collected | `01 00 00 00 00 00 00 00` | E$ Cash Emptied |
+| collecting billing records | `00 C0 80 00 00 00 00 00` | CF Bill CDR Full, CL Bill CDR Limit, CE Bill CDR Err |
+| collecting audit records | `00 00 40 00 00 00 00 00` | NE Audit CDR Err |
+| resetting call accounting | `00 20 00 00 00 00 00 00` | AE Call Acct Err |
+
+Other addresses seen: the 8-byte CDR counts at 0FF8, a 4-byte read at FF1F
+before clearing status flags, a 2-byte read at 2E06 for speed dials (🟡).
 
 There is also a `Txd` + two bytes frame sent during connection set-up ❓.
 
@@ -195,7 +203,7 @@ them through the error code each step records (✅ where the match is direct).
 2. Receive the phone's status frame: its check byte, phone number and phone
    type are checked (errors 8–12). ✅ (layout above)
 3. Send the security code — `Q` (errors 13–14). ✅
-4. Clear status flags — `S` to DA1F (error 16). ✅
+4. Clear status flags — `S` (error 16). ✅
 5. Software version checks, firmware download if one is pending (errors 17–36). ❓
 6. Collect CDR counts — `D`/`X` at 0FF8 (errors 37–39). 🟡
 7. Collect billing and audit CDRs — `D`/`X` reads; clear them — `T`/`K`
@@ -223,11 +231,13 @@ From PHBILAUD.C; addresses and sizes are ExpressNet's constants.
 3. **Audit records**: a ring of **125 records of 23 bytes**, from `3A00`
    (`3E00` on `CD` phones whose model number is below 4204).
 4. Records are read from *base + first slot × record size*, wrapping to the
-   ring's start when the run passes the last slot, then cleared with `T` /
-   `K`. How many records go into one read is ❓.
+   ring's start when the run passes the last slot, **5 billing records
+   (225 bytes) or 10 audit records (230 bytes) per read**, then cleared with
+   `T` (billing) / `K` (audit) and the flag masks above.
 
-`protocol.parse_cdr_counts`, `billing_base`, `audit_base` and `ring_reads`
-implement this; `Link.cdr_counts()` reads the counts.
+`protocol.parse_cdr_counts`, `billing_base`, `audit_base`, `ring_reads` and
+`record_reads` implement this; `Link.cdr_counts()` reads the counts and
+`Link.clear_flags()` sends the masks.
 
 ## In code
 

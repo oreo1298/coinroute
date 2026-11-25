@@ -86,8 +86,9 @@ def test_link_with_simulated_phone():
         link.read_memory(0x0FF8, 8)              # locked until the security code
     link.security(4821)
     assert link.read_memory(0x0FF8, 8) == bytes(range(8))
-    link.write_memory(0x0020, b"\x00" * 6)
-    assert phone.memory[0x20:0x26] == bytes(6)
+    phone.flags[1] = 0x20 | 0x80  # AE Call Acct Err, CF Bill CDR Full
+    link.clear_flags(*p.CLEAR_CALL_ACCOUNTING)
+    assert phone.flags[1] == 0x80
     link.set_clock(time.strptime("2026-05-02 01:05:09", "%Y-%m-%d %H:%M:%S"))
     assert phone.clock == "2605027010509"
     with pytest.raises(p.ProtocolError):
@@ -189,3 +190,20 @@ def test_status_money_and_flags():
     assert st.clock == "2605027010509" and st.flags == flags
     coin = bytes(48) + st.flags  # where ExpressNet stores them in a COIN.DAT record
     assert {c for c, *_ in TROUBLE_FLAGS if c in trouble_flags(coin.ljust(88, b"\0"))} >= {"E$", "CB"}
+
+
+def test_clear_masks_are_expressnets():
+    # the exact 'S' frames ExpressNet sends after each step
+    assert p.flag_mask(*p.CLEAR_BILLING) == bytes([0, 0xC0, 0x80, 0, 0, 0, 0, 0])
+    assert p.flag_mask(*p.CLEAR_AUDIT) == bytes([0, 0, 0x40, 0, 0, 0, 0, 0])
+    assert p.flag_mask(*p.CLEAR_CALL_ACCOUNTING) == bytes([0, 0x20, 0, 0, 0, 0, 0, 0])
+    assert p.flag_mask(*p.CLEAR_COIN) == bytes([1, 0, 0, 0, 0, 0, 0, 0])
+    assert p.cmd_clear_flags(p.flag_mask("E$"))[:4] == b"T\x0aS\x01"
+
+
+def test_record_reads_in_expressnets_chunks():
+    runs = p.ring_reads(0x3A00, p.AUDIT_RECORD, p.AUDIT_SLOTS, 120, 13)  # wraps after 5
+    assert p.record_reads(runs, p.AUDIT_RECORD, p.AUDIT_PER_READ) == [
+        (0x3A00 + 120 * 23, 5 * 23), (0x3A00, 8 * 23)]
+    runs = p.ring_reads(0x3000, p.BILLING_RECORD, p.BILLING_SLOTS, 0, 12)
+    assert [n for _, n in p.record_reads(runs, p.BILLING_RECORD, p.BILLING_PER_READ)] == [225, 225, 90]
