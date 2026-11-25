@@ -157,6 +157,8 @@ def test_call_accounting_and_settings(demo_db):
         assert [u["user"] for u in db.users()] == ["PROTEL", "OFFICE", "TECH"]
         assert db.users()[0]["password"] == "PROTELX3"
         assert db.ports()[0]["modem_name"] == "UPMS1200" and db.ports()[0]["line_number"] == "555-0100"
+        assert {k: db.ports()[0][k] for k in ("polling_speed", "port_speed", "framing", "pbx_local")} == {
+            "polling_speed": "1200", "port_speed": "9600", "framing": "N82", "pbx_local": ""}
         assert {m["name"] for m in db.modems()} == {"UPMS1200", "GENERIC"}
         pl = db.poll_lists()
         assert {k: pl[0][k] for k in ("name", "description", "start_time")} == {

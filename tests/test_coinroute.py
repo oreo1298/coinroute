@@ -257,3 +257,17 @@ def test_poll_list_days():
     assert xnet.poll_list_days(poll_list("N", "nightly", "01:00")) == xnet.WEEKDAYS
     assert xnet.poll_list_days(poll_list("W", "weekdays", "08:00", days="-MTWTF-")) == ["Mon", "Tue", "Wed", "Thu",
                                                                                            "Fri"]
+
+
+def test_port_settings():
+    from coinroute.demo import modem, port
+
+    r = bytearray(port(1, modem("UPMS1200", "Protel", "ATZ", "ATA", ("ATDT", "", ""), "ATZ"), "555-0100"))
+    r[246:258] = b"9,\0".ljust(12, b"\0")
+    r[258:270] = b"     \x00600\x00N8"  # blanks, then leftovers from an older layout (seen in real files)
+    got = xnet.port_settings(bytes(r))
+    assert got == {"pbx_local": "9,", "pbx_long": "", "polling_speed": "1200", "port_speed": "9600",
+                   "framing": "N82"}
+    assert xnet.framing_text("N82") == "8 bits, no parity, 2 stop bits"
+    assert xnet.framing_text("E71") == "7 bits, even parity, 1 stop bit"
+    assert xnet.port_settings(b"short") == {}

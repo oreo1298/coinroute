@@ -241,12 +241,16 @@ def modem(name: str, desc: str, init: str, answer: str, dials: tuple[str, str, s
     return bytes(r)
 
 
-def port(no: int, modem_rec: bytes, line: str) -> bytes:
+def port(no: int, modem_rec: bytes, line: str, speed: str = "1200") -> bytes:
     """LOCAL/PORTS.DAT record (313 bytes): a copy of a modem profile plus the port's line."""
     r = bytearray(313)
     r[1] = no
     r[3 : 3 + 229] = modem_rec[1:230]  # the port keeps its own copy of the modem strings
     put(r, 232, line, 14)
+    put(r, 270, speed, 5)  # polling speed
+    put(r, 275, "9600", 5)
+    r[308:311] = b"N82"  # three one-character fields: parity, data bits, stop bits
+    r[311] = r[312] = 1
     return bytes(r)
 
 
@@ -646,7 +650,7 @@ def make_demo(
     )
     (x / "PARAM/MODEMS.DAT").write_bytes(fixed_file(230, [upms, generic]))
     (x / "LOCAL/PORTS.DAT").write_bytes(
-        fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101")])
+        fixed_file(313, [port(1, upms, "555-0100"), port(2, generic, "555-0101", "300")])
     )
     (x / "LOCAL/GROUPS.DAT").write_bytes(fixed_file(22, [group(g) for g in GROUPS]))
     (x / "LOCAL/POLLIST.DAT").write_bytes(

@@ -18,7 +18,14 @@ from os import PathLike
 from pathlib import Path
 
 from .fields import phone_display
-from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields, poll_list_days
+from .xnet import (
+    call_accounting_counters,
+    call_detail,
+    coin_extras,
+    options_fields,
+    poll_list_days,
+    port_settings,
+)
 
 FMT = "%Y-%m-%d %H:%M"
 OK_DAYS = 2  # last good poll at most this many days before the data ends -> "OK"
@@ -470,10 +477,13 @@ class RouteDB:
         return self._all("SELECT user, description, password FROM users ORDER BY rowid")
 
     def ports(self) -> list[dict]:
-        return self._all(
+        rows = self._all(
             "SELECT port_no, modem_name, modem_description, line_number, init, answer, "
-            "dial_1, dial_2, dial_3, reset FROM ports ORDER BY port_no"
+            "dial_1, dial_2, dial_3, reset, raw FROM ports ORDER BY port_no"
         )
+        for r in rows:
+            r.update(port_settings(r.pop("raw") or b""))
+        return rows
 
     def modems(self) -> list[dict]:
         return self._all(

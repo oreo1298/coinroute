@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import RouteDB
-from ..xnet import SECURITY_CODES
+from ..xnet import SECURITY_CODES, framing_text
 from .detail import fit_columns, make_table, note
 from .models import RIGHT, Column, RowsModel
 from .style import count
@@ -174,6 +174,10 @@ class SettingsView(QWidget):
                 Column("Modem", "modem_name"),
                 Column("Description", "modem_description"),
                 Column("Line", "line_number"),
+                Column("Polling speed", "polling_speed", align=RIGHT),
+                Column("Framing", "framing", tip="Parity, data bits, stop bits", cell_tip=framing_text),
+                Column("PBX local", "pbx_local", mono=True),
+                Column("PBX long distance", "pbx_long", mono=True),
                 Column("Init", "init", mono=True),
                 Column("Answer", "answer", mono=True),
                 Column("Dial 1", "dial_1", mono=True),

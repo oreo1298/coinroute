@@ -282,6 +282,28 @@ def port_record(r: bytes) -> dict:
     }
 
 
+def port_settings(r: bytes) -> dict:
+    """The rest of a PORTS.DAT record, decoded on read (FORMATS.md): PBX codes, speeds, framing."""
+    if len(r) < 311:
+        return {}
+    framing = cstr(r[308:311])
+    return {
+        "pbx_local": cstr(r[246:258]).strip(),   # dialled first for a local trunk
+        "pbx_long": cstr(r[258:270]).strip(),    # ... for a long-distance trunk
+        "polling_speed": cstr(r[270:275]),       # bps for outgoing calls, e.g. "1200"
+        "port_speed": cstr(r[275:280]),          # probably the PC-to-modem speed, e.g. "9600"
+        "framing": framing,                      # parity, data bits, stop bits, e.g. "N82"
+    }
+
+
+def framing_text(f: str) -> str:
+    """'N82' -> '8 bits, no parity, 2 stop bits'."""
+    if len(f) != 3:
+        return f
+    parity = {"N": "no parity", "E": "even parity", "O": "odd parity"}.get(f[0], f"parity {f[0]}")
+    return f"{f[1]} bits, {parity}, {f[2]} stop bit{'s' if f[2] != '1' else ''}"
+
+
 def group_record(r: bytes) -> dict:
     """LOCAL/GROUPS.DAT (22 bytes)."""
     return {"group_no": cstr(r[1:8]), "raw": r}
