@@ -129,6 +129,8 @@ class ImportDialog(QDialog):
         )
 
         form = QFormLayout()
+        # Breeze only widens fields that ask to grow; the notes below would wrap at half width
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.addRow("ExpressNet folder:", self._row(self.source, browse_src))
         form.addRow("", self.source_note)
         form.addRow("Save database as:", self._row(self.dest, browse_dest))
