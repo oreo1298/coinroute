@@ -29,6 +29,7 @@ from ..db import NotARouteDatabase, RouteDB, export_csv
 from ..fields import phone_display
 from .detail import SiteDetail
 from .importdlg import ImportDialog, ImportOutcome, ImportProgressDialog, ImportResultDialog, finish_import
+from .reportsdlg import ReportsDialog
 from .settingsview import SettingsView
 from .sitesview import SitesView
 from .style import muted_css
@@ -150,6 +151,7 @@ class MainWindow(QMainWindow):
         )
         self.act_import = self._action(f, "&Import ExpressNet folder…", self.choose_import, "Ctrl+I")
         self.act_export = self._action(f, "&Export CSV…", self.choose_export, "Ctrl+E")
+        self.act_reports = self._action(f, "&Reports…", self.open_reports, "Ctrl+R")
         self.recent_menu = f.addMenu("Recent &files")
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
         f.addSeparator()
@@ -253,6 +255,7 @@ class MainWindow(QMainWindow):
         has = self.db is not None
         self.stack.setCurrentIndex(1 if has else 0)
         self.act_export.setEnabled(has)
+        self.act_reports.setEnabled(has)
         self.act_close.setEnabled(has)
         if not has:
             self.setWindowTitle("coinroute")
@@ -322,6 +325,14 @@ class MainWindow(QMainWindow):
         self.last_result = res
         res.finished.connect(lambda _=0: self.open_database(path))
         res.open()
+
+    def open_reports(self, kind: str = "coin") -> ReportsDialog | None:
+        if not self.db:
+            return None
+        dlg = ReportsDialog(self.db, self, kind)
+        self.reports_dialog = dlg
+        dlg.open()
+        return dlg
 
     def choose_export(self) -> None:
         if not self.db:

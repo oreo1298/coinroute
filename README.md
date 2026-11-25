@@ -45,6 +45,8 @@ summary of what was read and any damage that was skipped.
   coins with the days the box was emptied; communication errors by cause;
   every call (loaded page by page, with a date filter); call-accounting
   periods.
+- **Reports** (File → Reports…): Coin and Trouble reports laid out like
+  ExpressNet's, for any period; print them or save as PDF or HTML.
 - **Settings**: system record, users (passwords hidden until you ask),
   ports, modems, poll lists, groups, rate and option records.
 
@@ -57,6 +59,8 @@ The same data from the command line:
 coinroute import /path/to/XNET route.db
 coinroute summary route.db            # which phones answer, cash in box, failures (--removed: deleted sites too)
 coinroute export-csv route.db out/    # every table as CSV (add --calls for call records)
+coinroute report coin route.db --out coin.html        # Coin Report (last 7 days of data; --days, --from/--to)
+coinroute report trouble route.db --out trouble.html  # Trouble Report (--flags RJ,HG to pick flags)
 coinroute users /path/to/XNET         # ExpressNet logins and passwords
 ```
 
