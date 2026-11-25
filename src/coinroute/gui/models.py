@@ -78,7 +78,8 @@ class RowsModel(QAbstractTableModel):
             return custom
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             text = col.text(row)
-            return text if role == Qt.ItemDataRole.DisplayRole or len(text) > 40 else None
+            # tooltips repeat longer text, which a narrow column may cut short with "…"
+            return text if role == Qt.ItemDataRole.DisplayRole or len(text) > 12 else None
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return col.align
         if role == SortRole:
