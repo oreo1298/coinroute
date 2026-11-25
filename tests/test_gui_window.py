@@ -93,3 +93,14 @@ def test_export_csv_runs_on_a_worker(qtbot, window, demo_db, tmp_path, monkeypat
     w.wait()
     assert (tmp_path / "csv/sites.csv").exists() and (tmp_path / "csv/audit_calls.csv").exists()
     assert w not in window._busy
+
+
+def test_quit_after_for_smoke_tests(qapp, demo_db, tmp_path, monkeypatch):
+    """`coinroute-gui DB --quit-after MS` (used on the packaged build): 0 when the database opens, else 2."""
+    from coinroute.gui import app
+
+    ini = str(tmp_path / "settings.ini")
+    monkeypatch.setattr(app, "MainWindow", lambda: MainWindow(QSettings(ini, QSettings.Format.IniFormat)))
+    assert app.main([str(demo_db), "--quit-after", "50"]) == 0
+    # a database that can't be opened: the warning box is closed by the timer too
+    assert app.main([str(tmp_path / "missing.db"), "--quit-after", "50"]) == 2

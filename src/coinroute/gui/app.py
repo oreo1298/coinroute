@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from .. import __version__
@@ -21,20 +22,24 @@ def make_app(argv: list[str] | None = None) -> QApplication:
     return app
 
 
-def run(db_path: str | None = None) -> int:
+def run(db_path: str | None = None, quit_after: int | None = None) -> int:
+    """Show the main window (with `db_path` open). `quit_after` ms: close by itself, for smoke tests."""
     app = make_app()
     win = MainWindow()
     win.show()
-    if db_path:
-        win.open_database(db_path)
+    if quit_after is not None:
+        QTimer.singleShot(quit_after, lambda: app.exit(0))  # exit() also ends a message box left open
+    if db_path and not win.open_database(db_path) and quit_after is not None:
+        return 2
     return app.exec()
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="coinroute-gui", description="coinroute desktop app")
     ap.add_argument("db", nargs="?", help="route database to open (made by `coinroute import`)")
+    ap.add_argument("--quit-after", type=int, metavar="MS", help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
-    return run(a.db)
+    return run(a.db, a.quit_after)
 
 
 if __name__ == "__main__":

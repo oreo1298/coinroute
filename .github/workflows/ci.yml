@@ -47,6 +47,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true  # stop at the first failing program
           pyinstaller --noconfirm --clean --onedir --windowed --name coinroute-gui `
             --paths src --collect-submodules coinroute packaging/coinroute_gui.py
           pyinstaller --noconfirm --clean --onedir --console --name coinroute `
@@ -59,12 +60,18 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true  # stop at the first failing program
           $exe = "dist/coinroute-gui/coinroute.exe"
           & $exe --version
           & $exe demo "$env:RUNNER_TEMP/demo"
           & $exe import "$env:RUNNER_TEMP/demo/XNET" "$env:RUNNER_TEMP/demo.db"
           & $exe summary "$env:RUNNER_TEMP/demo.db"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $exe report coin "$env:RUNNER_TEMP/demo.db" --out "$env:RUNNER_TEMP/coin.html"
+          # the desktop app starts, opens the database and closes itself
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process dist/coinroute-gui/coinroute-gui.exe -Wait -PassThru `
+            -ArgumentList "`"$env:RUNNER_TEMP/demo.db`"", "--quit-after", "4000"
+          if ($p.ExitCode -ne 0) { throw "coinroute-gui.exe exited with $($p.ExitCode)" }
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
