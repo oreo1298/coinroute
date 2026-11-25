@@ -130,11 +130,20 @@ def test_columns_fit_the_width_without_sideways_scrolling(qtbot, qapp, db):
         assert all(hh.sectionSize(c) >= 56 for c in range(hh.count()))  # never crushed
         idx = v.proxy.index(0, 2)  # the full text of a squeezed cell is in its tooltip
         assert idx.data(Qt.ItemDataRole.ToolTipRole) == idx.data()
-        # fits a 1366-pixel laptop screen; on failure, say which control is wide
+        # the header rows wrap, so even with big fonts the view fits a small laptop screen;
+        # on failure, say which control is wide
         names = ("search", "group", "days", "removed", "totals")
         parts = {n: getattr(v, n).minimumSizeHint().width() for n in names}
-        parts["chips"] = sum(b.minimumSizeHint().width() for b in v.chips.values())
-        assert v.minimumSizeHint().width() < 1280, parts
+        parts["chips"] = max(b.minimumSizeHint().width() for b in v.chips.values())
+        assert v.minimumSizeHint().width() < 800, parts
+        # narrow: the chips go onto more lines, all inside the view and none overlapping
+        v.resize(max(v.minimumSizeHint().width(), 480), 420)
+        qtbot.wait(20)
+        boxes = [b.geometry() for b in v.chips.values()]
+        assert len({r.top() for r in boxes}) > 1
+        assert all(r.right() < v.width() for r in boxes)
+        assert not any(a.intersects(b) for i, a in enumerate(boxes) for b in boxes[i + 1:])
+        assert v.totals.geometry().top() > max(r.bottom() for r in boxes)
     finally:
         qapp.setFont(base)
 

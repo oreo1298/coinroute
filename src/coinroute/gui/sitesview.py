@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import RouteDB
+from .flowlayout import FlowLayout
 from .models import RIGHT, Column, RowRole, RowsModel, SortRole
 from .style import (
     STATUS_LABELS,
@@ -238,6 +239,17 @@ class StatusDelegate(QStyledItemDelegate):
         )
 
 
+def _labelled(text: str, w: QWidget) -> QWidget:
+    """A label and its control kept together on one line of a wrapping row."""
+    box = QWidget()
+    lay = QHBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(6)
+    lay.addWidget(QLabel(text))
+    lay.addWidget(w)
+    return box
+
+
 class SitesView(QWidget):
     """Toolbar (search, group, window, removed), status chips with totals, and the sites table."""
 
@@ -253,7 +265,7 @@ class SitesView(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search phone, description, city…")
         self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(180)
+        self.search.setMinimumWidth(self.fontMetrics().averageCharWidth() * 30)
         self.search.textChanged.connect(lambda t: self._filter(text=t))
 
         self.group = QComboBox()
@@ -277,24 +289,18 @@ class SitesView(QWidget):
         self.removed.setToolTip("Also list phones that once answered but whose site record has been deleted")
         self.removed.toggled.connect(lambda _: self.reload())
 
-        bar = QHBoxLayout()
-        bar.addWidget(self.search, 2)
-        bar.addSpacing(8)
-        bar.addWidget(QLabel("Group:"))
-        bar.addWidget(self.group)
-        bar.addSpacing(8)
-        bar.addWidget(QLabel("Window:"))
-        bar.addWidget(self.days)
-        bar.addSpacing(8)
+        # both header rows wrap when the window is narrow, so neither sets a wide minimum width
+        bar = FlowLayout(spacing=10)
+        bar.addWidget(self.search)
+        bar.addWidget(_labelled("Group:", self.group))
+        bar.addWidget(_labelled("Window:", self.days))
         bar.addWidget(self.removed)
-        bar.addStretch(1)
 
         # status chips: click one to show only that status
         self.chips: dict[str | None, QToolButton] = {}
         self.chip_group = QButtonGroup(self)
         self.chip_group.setExclusive(True)
-        chips = QHBoxLayout()
-        chips.setSpacing(6)
+        chips = FlowLayout(spacing=6)
         for kind in (None, "ok", "silent", "dead", "never"):
             b = QToolButton()
             b.setCheckable(True)
@@ -305,11 +311,9 @@ class SitesView(QWidget):
             self.chips[kind] = b
             chips.addWidget(b)
         self.chips[None].setChecked(True)
-        chips.addStretch(1)
         self.totals = QLabel()
         self.totals.setWordWrap(True)  # one long line would set the whole view's minimum width
         self.totals.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        # the totals get their own line, so the header never sets a wide minimum for the window
 
         self.table = QTableView()
         self.table.setModel(self.proxy)
