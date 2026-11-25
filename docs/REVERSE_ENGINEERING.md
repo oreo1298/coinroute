@@ -47,6 +47,29 @@ copy of the program to study; never commit it.
 Segment numbers will differ in other ExpressNet versions; re-derive with
 `ne.py modules`.
 
+### Tables found so far (v1.51)
+
+Located while decoding Milestone 3 fields; described here, not copied.
+
+- **Trouble flags.** Three 45-entry tables of far pointers in segments 154
+  (names), 155 (two-letter codes) and 156 (report legend lines), all in
+  alphabetical order of the names. A helper in segment 2 returns entry *i* of
+  one of them; another tests flag *i* in a record using a table of
+  (mask, byte) pairs at DGROUP 0x190. The trouble report (segment 95,
+  REPTROUB.C) loops *i* = 0–44 and tests both the report's selection and the
+  coin record (from byte 48). FORMATS.md lists the resulting bits.
+- **Export columns.** ExpressNet's delimited exports are table-driven: DGROUP
+  0x3950–0x3ef0 holds column descriptors (name, type letter C/N/D, width) for
+  the audit, coin, comm-error, billing and call-accounting exports. Their
+  order names the undecoded bytes of each record.
+- **Call-accounting categories.** Segment 238 holds 84 far pointers to the
+  category names in segment 98 (SDFACCT.C), ending with "END OF ROUTES". The
+  export loops over 83 categories, reading three u16 per category at
+  46 + 6·*i* of the CALLACCT record.
+- **Security codes.** The site editor (segment 21) asks for several 4-digit
+  codes (security access, coin collection, coin box, CDR retrieval, credit
+  card). They are not stored as plain digits in SITES.DAT; still to locate.
+
 ## The modem side (known)
 
 The PC talks Hayes AT to a Protel UPMS1200 (or a generic modem at 300 bps):

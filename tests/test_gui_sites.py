@@ -128,3 +128,17 @@ def test_columns_fit_the_width_without_sideways_scrolling(qtbot, qapp, db):
         assert v.minimumSizeHint().width() < 1100  # the totals line wraps instead of widening the view
     finally:
         qapp.setFont(base)
+
+
+def test_trouble_column_shows_codes_with_names(qtbot, db):
+    v = SitesView()
+    qtbot.addWidget(v)
+    v.set_db(db)
+    col = next(i for i, c in enumerate(v.model.columns) if c.title == "Trouble")
+    rows = [i for i in range(v.proxy.rowCount()) if v.proxy.index(i, col).data()]
+    assert rows
+    idx = v.proxy.index(rows[0], col)
+    codes = idx.data().split()
+    assert all(f"{c}  " in idx.data(Qt.ItemDataRole.ToolTipRole) for c in codes)
+    v.search.setText("rj")  # search matches trouble codes
+    assert visible_rows(v) and all("RJ" in r["flags"] for r in visible_rows(v))

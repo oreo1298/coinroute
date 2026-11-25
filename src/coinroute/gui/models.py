@@ -24,6 +24,7 @@ class Column:
     align: Qt.AlignmentFlag = LEFT
     tip: str | None = None  # header tooltip
     mono: bool = False
+    cell_tip: Callable[[Any], str | None] | None = None  # value -> tooltip for the cell
 
     def text(self, row: dict) -> str:
         v = row.get(self.key)
@@ -76,6 +77,8 @@ class RowsModel(QAbstractTableModel):
         custom = self.cell(row, col, role)
         if custom is not NotImplemented:
             return custom
+        if role == Qt.ItemDataRole.ToolTipRole and col.cell_tip:
+            return col.cell_tip(row.get(col.key))
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             text = col.text(row)
             # tooltips repeat longer text, which a narrow column may cut short with "…"

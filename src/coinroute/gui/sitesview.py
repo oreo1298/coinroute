@@ -25,7 +25,18 @@ from PySide6.QtWidgets import (
 
 from ..db import RouteDB
 from .models import RIGHT, Column, RowRole, RowsModel, SortRole
-from .style import STATUS_LABELS, STATUS_ORDER, count, css, money, muted, status_colors, status_text
+from .style import (
+    STATUS_LABELS,
+    STATUS_ORDER,
+    count,
+    css,
+    flag_codes,
+    flag_names,
+    money,
+    muted,
+    status_colors,
+    status_text,
+)
 
 StatusKindRole = Qt.ItemDataRole.UserRole + 10
 
@@ -74,6 +85,13 @@ class SitesModel(RowsModel):
                 f"Polls that failed in the last {days} days of data",
             ),
             Column("Main failure", "main_failure", tip="The most frequent failure in the window"),
+            Column(
+                "Trouble",
+                "flags",
+                flag_codes,
+                tip="Trouble flags at the last good poll (hover a cell for their names)",
+                cell_tip=flag_names,
+            ),
             Column("Firmware", "firmware"),
         ]
 
@@ -148,7 +166,8 @@ class SitesProxy(QSortFilterProxyModel):
             t = self.text
             digits = "".join(ch for ch in t if ch.isdigit())
             hay = " ".join(
-                str(row.get(k) or "") for k in ("description", "place", "site_no", "main_failure")
+                [str(row.get(k) or "") for k in ("description", "place", "site_no", "main_failure")]
+                + list(row.get("flags") or [])  # trouble codes, e.g. "HG"
             ).lower()
             if t not in hay and not (
                 digits

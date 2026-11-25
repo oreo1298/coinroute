@@ -25,3 +25,17 @@ def test_settings_view_hides_passwords_until_asked(qtbot, db):
     assert s.rates_model.rowCount() == 3 and s.options_model.rowCount() == 2
     s.set_db(None)
     assert s.users_model.rowCount() == 0
+
+
+def test_security_codes_hidden_until_asked(qtbot, db):
+    s = SettingsView()
+    qtbot.addWidget(s)
+    s.set_db(db)
+    m = s.options_model
+    col = next(i for i, c in enumerate(m.columns) if c.key == "code_access")
+    row = next(i for i, r in enumerate(m.rows) if r["name"] == "STANDARD")
+    assert m.index(row, col).data() == "••••"
+    s.show_codes.setChecked(True)
+    assert m.index(row, col).data() == "4821"
+    s.set_db(db)  # reopening hides them again
+    assert m.index(row, col).data() == "••••"

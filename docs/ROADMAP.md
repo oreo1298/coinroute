@@ -4,7 +4,7 @@
 |---|---|---|
 | 1 | Import an ExpressNet folder into SQLite (+ CLI, summary, CSV) | ✅ done |
 | 2 | Qt desktop app over the imported data | ✅ done |
-| 3 | Decode the remaining fields | **next** — partly done, see FORMATS.md ❓ entries |
+| 3 | Decode the remaining fields | **in progress** — trouble flags, call details, call accounting, security codes done |
 | 4 | Payphone protocol + simulated payphone | planned |
 | 5 | Polling service over the UPMS1200 | planned |
 | 6 | Programming: rates, options, firmware downloads | planned |
@@ -108,7 +108,20 @@ Later (not required for M2): PyInstaller build for Windows; printable reports
 
 Needs real data to verify, so this is done on Andrew's machine
 (`COINROUTE_REAL_XNET`) or with data uploaded to a session (never committed).
-Known gaps, with leads:
+
+**Done** (see FORMATS.md; method in REVERSE_ENGINEERING.md "Tables found so
+far"): the 45 trouble flags (COIN.DAT bytes 48–56), amount taken out and record
+counts in COIN.DAT, the 16 bytes of audit call detail, the 83 call-accounting
+categories, and the five security codes in options records (MISCOPT.DAT). All
+are decoded on read from the raw bytes, so old databases need no re-import.
+
+**Still open:** the rest of COIN "PFlags" (57–63), the CALLACCT tail (544–551),
+the comm-error port, the options record's phone numbers / call-in windows /
+report schedule, poll-list weekday flags, port speeds and framing, rate tables
+(CALLCOST), and the site record's binary areas. The leads below were written
+before the work above; the trouble-flag lead is answered.
+
+Original notes:
 
 - **Trouble flags.** ExpressNet's Trouble Report prints per-poll codes: AE Call
   Acct Err, E$ Cash Emptied, $V Cash Vol Full, $F Coin Box Full, CG Coin Gate

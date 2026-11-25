@@ -18,6 +18,7 @@ from os import PathLike
 from pathlib import Path
 
 from .fields import phone_display
+from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields
 
 FMT = "%Y-%m-%d %H:%M"
 OK_DAYS = 2  # last good poll at most this many days before the data ends -> "OK"
@@ -154,7 +155,7 @@ class RouteDB:
         rows = []
         for s in sites:
             last = self._one(
-                "SELECT at, cash_box_cents, coin_total_cents FROM coin_polls "
+                "SELECT at, cash_box_cents, coin_total_cents, raw FROM coin_polls "
                 "WHERE phone=? ORDER BY at DESC LIMIT 1",
                 s["phone"],
             )
@@ -194,6 +195,7 @@ class RouteDB:
                     "failed_calls_in_window": fails,
                     "main_failure": why["message"] if why else None,
                     "firmware": s["firmware_current"],
+                    "flags": coin_extras(last["raw"])["flags"] if last and last["raw"] else [],
                     "removed": s["removed"],
                 }
             )
@@ -249,21 +251,26 @@ class RouteDB:
         """All successful polls of a phone, oldest first (one a day at most, so this stays small).
 
         Adds `coins_cents` (growth of the lifetime total since the previous poll) and
-        `collected_cents` (set when the box was emptied since the previous poll).
+        `collected_cents` (set when the box was emptied since the previous poll: the amount the phone
+        reported if it did, else an estimate from the box and lifetime totals), plus the decoded
+        trouble `flags` and record counts from the raw bytes.
         """
         rows = self._all(
-            "SELECT id, at, coin_total_cents, cash_box_cents, status_bytes FROM coin_polls "
+            "SELECT id, at, coin_total_cents, cash_box_cents, status_bytes, raw FROM coin_polls "
             "WHERE phone=? ORDER BY at, id",
             phone,
         )
         prev = None
         for r in rows:
+            r.update(coin_extras(r.pop("raw") or b""))
             r["coins_cents"] = r["collected_cents"] = None
             if prev:
                 delta = r["coin_total_cents"] - prev["coin_total_cents"]
                 r["coins_cents"] = delta if delta >= 0 else None
                 if r["cash_box_cents"] < prev["cash_box_cents"]:
                     r["collected_cents"] = prev["cash_box_cents"] + max(0, delta) - r["cash_box_cents"]
+            if r["amount_collected_cents"]:
+                r["collected_cents"] = r["amount_collected_cents"]
             prev = r
         return rows
 
@@ -347,6 +354,7 @@ class RouteDB:
         )
         for r in rows:
             r["detail_hex"] = r["detail"].hex(" ") if r["detail"] is not None else ""
+            r.update(call_detail(r["detail"]))
         return rows
 
     def call_date_range(self, phone: str) -> tuple[str | None, str | None]:
@@ -356,16 +364,18 @@ class RouteDB:
         return r[0], r[1]
 
     def call_accounting(self, phone: str) -> list[dict]:
-        """Call-accounting periods, newest first. The counters (from byte 46) are not decoded yet."""
+        """Call-accounting periods, newest first, each with its non-empty categories and totals."""
         rows = self._all(
             "SELECT id, at, period_start, period_end, raw FROM call_accounting WHERE phone=? "
             "ORDER BY at DESC, id DESC",
             phone,
         )
         for r in rows:
-            body = r.pop("raw")[46:]
-            r["counters_hex"] = body.rstrip(b"\0").hex(" ")
-            r["nonzero_bytes"] = sum(1 for b in body if b)
+            cats = call_accounting_counters(r.pop("raw") or b"")
+            r["categories"] = cats
+            r["calls"] = sum(c["calls"] for c in cats)
+            r["money_cents"] = sum(c["money_cents"] for c in cats)
+            r["minutes"] = sum(c["minutes"] for c in cats)
         return rows
 
     # --- settings -----------------------------------------------------------------------------
@@ -405,10 +415,14 @@ class RouteDB:
         )
 
     def options_records(self) -> list[dict]:
-        return self._all(
-            "SELECT o.name, (SELECT count(*) FROM sites s WHERE s.options_record=o.name) sites "
+        """Options records with description, security codes and how many sites use each."""
+        rows = self._all(
+            "SELECT o.name, (SELECT count(*) FROM sites s WHERE s.options_record=o.name) sites, o.raw "
             "FROM options_records o ORDER BY o.name"
         )
+        for r in rows:
+            r.update(options_fields(r.pop("raw") or b""))
+        return rows
 
 
 def export_csv(
