@@ -156,18 +156,30 @@ def cmd_simple(letter: str) -> bytes:
 # After CONNECT the phone sends one frame by itself. Offsets are into the body (after 'T' and L).
 # Where each comes from, and how sure it is: docs/PROTOCOL.md, "The status frame".
 
+# Offsets are in the newest layout; older phones' statuses are normalised to it first, as
+# ExpressNet does (normalize_status).
 STATUS_PHONE = slice(10, 20)   # the phone's own number, 10 ASCII digits
 STATUS_TYPE = slice(27, 29)    # two letters, e.g. "DA", "DD", "CD"; "##" = not set
+STATUS_MODEL = slice(29, 33)   # digits after the letters (firmware model, e.g. 7019)
 STATUS_CLOCK = slice(43, 56)   # yymmdd, weekday, hhmmss (13 ASCII digits); absent in short statuses
 SHORT_STATUS = 0x25            # L of the short status older phones send (no clock)
+# older status formats, by first body byte: where ExpressNet inserts empty bytes, and how many
+STATUS_FORMS = {ord("@"): (4, 5), ord("A"): (2, 7)}
 
 # the type letter's second character -> the site phone types (1-5) ExpressNet accepts for it
 TYPE_ACCEPTS = {"A": {1, 4, 5}, "D": {2, 3, 5}, "C": {1, 2, 3, 4}}
 
 
+def normalize_status(body: bytes) -> bytes:
+    """Bring an older status format to the newest layout by inserting empty bytes, as ExpressNet does."""
+    at, n = STATUS_FORMS.get(body[0], (0, 0)) if body else (0, 0)
+    return bytes(body[:at]) + bytes(n) + bytes(body[at:]) if n else bytes(body)
+
+
 @dataclass
 class Status:
-    body: bytes
+    body: bytes  # normalised (newest layout)
+    raw: bytes = b""  # as the phone sent it
 
     @property
     def phone(self) -> str:
@@ -176,6 +188,17 @@ class Status:
     @property
     def phone_type(self) -> str:
         return self.body[STATUS_TYPE].decode("latin-1")
+
+    @property
+    def form(self) -> str:
+        """'@' or 'A' for the older formats; the newest format's first byte otherwise."""
+        return chr((self.raw or self.body)[0])
+
+    @property
+    def model(self) -> int | None:
+        """The number after the type letters (e.g. 7019 for a DD7019 phone), if present."""
+        d = self.body[STATUS_MODEL]
+        return int(d) if len(d) == 4 and d.isdigit() else None
 
     @property
     def clock(self) -> str | None:
@@ -193,21 +216,79 @@ class Status:
 
 
 def parse_status(body: bytes) -> Status:
-    if len(body) < STATUS_TYPE.stop:
+    norm = normalize_status(body)
+    if len(norm) < STATUS_TYPE.stop:
         raise ProtocolError(f"status string not complete ({len(body)} bytes)")
-    return Status(bytes(body))
+    return Status(norm, bytes(body))
 
 
-def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, flags: bytes = b"") -> bytes:
-    """A status body with the known fields filled in (for the simulator and tests). Unknown bytes are 0."""
+def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, flags: bytes = b"",
+                model: int | None = 7019) -> bytes:
+    """A newest-format status body with the known fields filled in (simulator, tests). Unknown bytes are 0."""
     b = bytearray(STATUS_CLOCK.stop if clock else 36)
-    b[0] = ord("S")  # assumed: the first byte's meaning is not known
+    b[0] = ord("S")  # assumed: the newest format's first byte is not known (older ones use '@' / 'A')
     b[1:1 + len(flags)] = flags
     b[STATUS_PHONE] = phone.encode("ascii")[:10].ljust(10, b"0")
     b[STATUS_TYPE] = phone_type.encode("ascii")[:2]
+    if model is not None:
+        b[STATUS_MODEL] = f"{model:04d}".encode("ascii")
     if clock:
         b[STATUS_CLOCK] = clock.encode("ascii")
     return bytes(b)
+
+
+# --- reading memory and call records ---------------------------------------------------------
+# A read reply is not checked for 'G': its data follows an echo of the command (the letter and
+# its argument bytes), so it starts at body byte 4 after 'D' and byte 5 after 'X'.
+READ_DATA = {ord("D"): 4, ord("X"): 5}
+
+CDR_COUNTS = 0x0FF8           # 8 bytes: billing (first, count) twice, then audit (first, count) twice
+BILLING_RECORD, BILLING_SLOTS = 45, 52    # a ring of 52 records of 45 bytes
+AUDIT_RECORD, AUDIT_SLOTS = 23, 125       # a ring of 125 records of 23 bytes
+
+
+@dataclass
+class CdrCounts:
+    billing_first: int
+    billing_count: int
+    audit_first: int
+    audit_count: int
+    billing_ok: bool  # both copies agree and the numbers fit the ring
+    audit_ok: bool
+
+
+def parse_cdr_counts(data: bytes) -> CdrCounts:
+    if len(data) < 8:
+        raise ProtocolError(f"CDR counts need 8 bytes, got {len(data)}")
+    b1, b2, a1, a2 = data[0:2], data[2:4], data[4:6], data[6:8]
+    return CdrCounts(
+        b1[0], b1[1], a1[0], a1[1],
+        b1 == b2 and b1[0] <= BILLING_SLOTS and b1[1] <= BILLING_SLOTS,
+        a1 == a2 and a1[0] <= AUDIT_SLOTS and a1[1] <= AUDIT_SLOTS,
+    )
+
+
+def billing_base(phone_type: str) -> int:
+    return 0x2000 if phone_type == "CA" else 0x3000
+
+
+def audit_base(phone_type: str, model: int | None) -> int:
+    return 0x3E00 if phone_type == "CD" and model is not None and model < 4204 else 0x3A00
+
+
+def ring_reads(base: int, size: int, slots: int, first: int, count: int, ok: bool = True) -> list[tuple[int, int]]:
+    """(address, records) runs to read `count` records from slot `first` of a ring, wrapping at the end.
+
+    When the counts can't be trusted (`ok` false) ExpressNet reads the whole ring from slot 0.
+    """
+    if not ok:
+        first, count = 0, slots
+    first, count = min(first, slots), min(count, slots)
+    head = min(count, slots - first)
+    runs = [(base + first * size, head)] if head else []
+    if count > head:
+        runs.append((base, count - head))
+    return runs
 
 
 # --- talking to a phone ---------------------------------------------------------------------
@@ -265,8 +346,26 @@ class Link:
 
     # convenience wrappers
     def read_memory(self, addr: int, count: int) -> bytes:
-        reply = self.command(cmd_read(addr >> 8, addr & 0xFF, count))
-        return reply.body[1:]
+        """'D': `count` bytes at a 16-bit address."""
+        reply = self.command(cmd_read(addr >> 8, addr & 0xFF, count), need_ack=False)
+        return self._read_data(reply, ord("D"), count)
+
+    def read_memory_ext(self, addr: int, count: int) -> bytes:
+        """'X': `count` bytes at a 24-bit address (phones with more memory)."""
+        reply = self.command(cmd_read_ext(addr >> 16, (addr >> 8) & 0xFF, addr & 0xFF, count),
+                             need_ack=False)
+        return self._read_data(reply, ord("X"), count)
+
+    @staticmethod
+    def _read_data(reply: Frame, letter: int, count: int) -> bytes:
+        data = reply.body[READ_DATA[letter]:]
+        if len(data) < count:
+            raise ProtocolError(f"read refused or reply too short ({len(data)} of {count} bytes, "
+                                f"reply {reply.body[:1]!r})")
+        return data[:count]
+
+    def cdr_counts(self) -> CdrCounts:
+        return parse_cdr_counts(self.read_memory(CDR_COUNTS, 8))
 
     def write_memory(self, addr: int, data: bytes) -> None:
         self.command(cmd_write(addr >> 8, addr & 0xFF, data))

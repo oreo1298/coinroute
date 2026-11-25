@@ -75,12 +75,12 @@ class SimPhone:
             return bytes([ACK])
         if not self.unlocked:
             return bytes([NAK])
-        if letter == "D" and len(args) == 3:
+        if letter == "D" and len(args) == 3:  # reply: the command echoed, then the data (assumed echo)
             addr, n = args[0] << 8 | args[1], args[2]
-            return bytes([ACK]) + bytes(self.memory[addr:addr + n])
+            return bytes(body) + bytes(self.memory[addr:addr + n])
         if letter == "X" and len(args) == 4:
             addr, n = (args[0] << 16 | args[1] << 8 | args[2]) & 0xFFFF, args[3]
-            return bytes([ACK]) + bytes(self.memory[addr:addr + n])
+            return bytes(body) + bytes(self.memory[addr:addr + n])
         if letter == "S" and len(args) >= 3:
             addr = args[0] << 8 | args[1]
             self.memory[addr:addr + len(args) - 2] = args[2:]

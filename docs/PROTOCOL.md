@@ -43,9 +43,13 @@ bytes follows it. ✅
 
 Replies come back in the same shape: ExpressNet's receiver waits for `'T'`,
 takes the next byte as the length, and collects that many bytes before it
-looks at the reply. ✅ A reply whose first body byte is **`'G'`** means
-"accepted"; every command step checks for it. ✅ What a phone sends instead
-when it refuses is ❓ (the simulator assumes `'E'`).
+looks at the reply. ✅ After a write, clear or download command, a reply whose
+first body byte is **`'G'`** means "accepted". ✅ **Read replies are different:**
+ExpressNet never checks them for `'G'`; it takes the data from body byte 4
+after a `D` and byte 5 after an `X`, i.e. after an echo of the command letter
+and its argument bytes. ✅ where the data starts; 🟡 that the bytes before it
+are an echo. What a phone sends when it refuses is ❓ (the simulator assumes
+`'E'`).
 
 ## Timing and retries ✅
 
@@ -54,7 +58,9 @@ when it refuses is ❓ (the simulator assumes `'E'`).
   empty" if it never empties.
 - Each command is tried **4 times**. After the fourth failure the step's error
   code (the `COMM_ERRORS` list) is recorded and the poll moves on or ends.
-- Reply time-outs per step: ❓.
+- Reply time-outs are computed per command from the port speed: about the time
+  to receive the expected number of bytes, plus a fixed margin of a few
+  seconds. 🟡 (exact constants ❓)
 
 ## Phone types ✅
 
@@ -87,7 +93,19 @@ ExpressNet setting allows it. ✅
 The first frame after `CONNECT` comes from the phone, unasked. ExpressNet waits
 for it (error 8 if no `'T'` arrives, 9 if it never completes, 10 if its check
 byte is wrong, each after a few retries), keeps its first 64 bytes per port,
-and reads these fields from it (offsets are into the body, after `'T'` and `L`):
+and reads these fields from it.
+
+There are three formats, told apart by the first body byte. ExpressNet brings
+the two older ones to the newest layout by inserting empty bytes, and reads
+every field at the newest layout's offsets: ✅
+
+| First byte | Format | Normalised by inserting |
+|---|---|---|
+| `@` | oldest | 5 zero bytes at body position 4 |
+| `A` | older | 7 zero bytes at body position 2 |
+| anything else | newest | nothing |
+
+Offsets below are into the body (after `'T'` and `L`) in the newest layout:
 
 | Body bytes | Field | |
 |---|---|---|
@@ -97,6 +115,7 @@ and reads these fields from it (offsets are into the body, after `'T'` and `L`):
 | 10–19 | the phone's own number, 10 ASCII digits; must equal one of the two numbers ExpressNet dialled from (else error 11) | ✅ |
 | 20–25 | six bytes ExpressNet moves elsewhere in its copy | ❓ |
 | 27–28 | phone type letters, see above (else error 12) | ✅ |
+| 29–32 | the firmware model number after the letters (e.g. `7019` in `DD7019`); the call-record step compares it with 4204 | ✅ that it is read as a number; 🟡 that it is the model |
 | 33 | checked for zero by the software-download step | ❓ |
 | 43–55 | the phone's clock, 13 ASCII digits `yymmdd` `w` `hhmmss` — the same layout as the `P` command; the modem-status screen shows it as Date and Time | ✅ |
 
@@ -179,6 +198,27 @@ them through the error code each step records (✅ where the match is direct).
 
 Coin totals and the cash-box amount reach COIN.DAT during this sequence; which
 read carries them is ❓.
+
+## Collecting call records (CDRs) ✅
+
+From PHBILAUD.C; addresses and sizes are ExpressNet's constants.
+
+1. **Counts**: read 8 bytes at `0FF8` (`D 0F F8 08`; `X 0F F8 00 08` on phones
+   with more memory; one phone family uses `D 02 00 08`). They are two pairs,
+   each sent twice: billing *(first slot, number of records)* ×2, then audit
+   *(first slot, number of records)* ×2. If a pair's two copies differ, or the
+   numbers don't fit the ring (billing ≤ 52, audit ≤ 125), ExpressNet notes it
+   and reads that whole ring from slot 0.
+2. **Billing records**: a ring of **52 records of 45 bytes**, from `2000` on
+   `CA` phones and `3000` on the others.
+3. **Audit records**: a ring of **125 records of 23 bytes**, from `3A00`
+   (`3E00` on `CD` phones whose model number is below 4204).
+4. Records are read from *base + first slot × record size*, wrapping to the
+   ring's start when the run passes the last slot, then cleared with `T` /
+   `K`. How many records go into one read is ❓.
+
+`protocol.parse_cdr_counts`, `billing_base`, `audit_base` and `ring_reads`
+implement this; `Link.cdr_counts()` reads the counts.
 
 ## In code
 

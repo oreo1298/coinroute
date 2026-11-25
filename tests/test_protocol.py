@@ -82,7 +82,7 @@ def test_link_with_simulated_phone():
     phone = SimPhone(security_code=4821)
     phone.memory[0x0FF8:0x1000] = bytes(range(8))
     link = p.Link(SimTransport(phone), timeout=0.05)
-    with pytest.raises(p.ProtocolError, match="instead of 'G'"):
+    with pytest.raises(p.ProtocolError, match="read refused"):
         link.read_memory(0x0FF8, 8)              # locked until the security code
     link.security(4821)
     assert link.read_memory(0x0FF8, 8) == bytes(range(8))
@@ -134,3 +134,45 @@ def test_simulated_phone_over_a_pty():
     os.close(slave)
     t.join(3)
     os.close(master)
+
+
+def test_older_status_formats_are_normalised_like_expressnet():
+    new = p.status_body("5550100123", "DD", "2605027010509")
+    st = p.parse_status(new)
+    assert st.form == "S" and st.model == 7019 and st.phone == "5550100123"
+    # an 'A' status lacks body bytes 2-8 of the newest layout; '@' lacks 4-8
+    for letter, at, n in (("A", 2, 7), ("@", 4, 5)):
+        old = bytes([ord(letter)]) + new[1:at] + new[at + n:]
+        st = p.parse_status(old)
+        assert st.form == letter and st.raw == old
+        assert (st.phone, st.phone_type, st.model) == ("5550100123", "DD", 7019)
+
+
+def test_read_replies_echo_the_command():
+    phone = SimPhone(security_code="4821")
+    phone.memory[0x2000:0x2004] = b"\x01\x02\x03\x04"
+    link = p.Link(SimTransport(phone), timeout=0.05)
+    link.security("4821")
+    assert link.read_memory(0x2000, 4) == b"\x01\x02\x03\x04"
+    assert link.read_memory_ext(0x002000, 2) == b"\x01\x02"
+    reply = list(p.FrameReader().feed(phone.handle(b"D\x20\x00\x02")))[0]
+    assert reply.body == b"D\x20\x00\x02\x01\x02"  # data after the echo (body byte 4)
+
+
+def test_cdr_counts_and_ring_reads():
+    c = p.parse_cdr_counts(bytes([50, 5, 50, 5, 120, 10, 120, 10]))
+    assert (c.billing_first, c.billing_count, c.audit_first, c.audit_count) == (50, 5, 120, 10)
+    assert c.billing_ok and c.audit_ok
+    # billing: 52 slots of 45 bytes from 0x3000; 5 records from slot 50 wrap after 2
+    assert p.ring_reads(p.billing_base("DD"), p.BILLING_RECORD, p.BILLING_SLOTS, 50, 5) == [
+        (0x3000 + 50 * 45, 2), (0x3000, 3)]
+    assert p.ring_reads(p.audit_base("DD", 7019), p.AUDIT_RECORD, p.AUDIT_SLOTS, 0, 4) == [(0x3A00, 4)]
+    assert p.billing_base("CA") == 0x2000 and p.audit_base("CD", 4100) == 0x3E00
+    bad = p.parse_cdr_counts(bytes([1, 2, 1, 3, 0, 0, 0, 0]))  # the two copies disagree
+    assert not bad.billing_ok and bad.audit_ok
+    assert p.ring_reads(0x3000, 45, 52, 1, 2, ok=False) == [(0x3000, 52)]  # read the whole ring
+    phone = SimPhone(security_code="4821")
+    phone.memory[p.CDR_COUNTS:p.CDR_COUNTS + 8] = bytes([3, 4, 3, 4, 7, 8, 7, 8])
+    link = p.Link(SimTransport(phone), timeout=0.05)
+    link.security("4821")
+    assert link.cdr_counts().audit_count == 8
