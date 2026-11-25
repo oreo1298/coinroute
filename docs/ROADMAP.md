@@ -5,7 +5,7 @@
 | 1 | Import an ExpressNet folder into SQLite (+ CLI, summary, CSV) | ✅ done |
 | 2 | Qt desktop app over the imported data | ✅ done |
 | 3 | Decode the remaining fields | **in progress** — trouble flags, call details, call accounting, security codes done |
-| 4 | Payphone protocol + simulated payphone | planned |
+| 4 | Payphone protocol + simulated payphone | **in progress** — framing, commands, simulator, capture tool done; needs a real capture |
 | 5 | Polling service over the UPMS1200 | planned |
 | 6 | Programming: rates, options, firmware downloads | planned |
 
@@ -148,6 +148,17 @@ Original notes:
   (needed for Milestone 5), polling flags, last-status fields.
 
 ## Milestone 4 — protocol and a simulated payphone
+
+**Done so far:** docs/PROTOCOL.md (frame shape, check byte, retries, command
+letters and layouts, phone types, the poll's steps), `coinroute.protocol`
+(frames, stream reader, command builders, `Link` with ExpressNet's retry rule),
+`coinroute.simphone` (a simulated phone with a memory image and a security-code
+gate), and `tools/serial_tap.py` to record a real poll. **Next:** one capture
+of ExpressNet polling a real phone, to settle the status frame, the security
+code encoding, the read addresses and time-outs; then a full poll session
+against the simulator.
+
+The original plan:
 
 From static analysis of XNET.EXE (see docs/REVERSE_ENGINEERING.md) plus
 captures from `tools/fake_upms.py` logs. Deliverables: `docs/PROTOCOL.md`, and

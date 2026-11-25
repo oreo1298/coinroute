@@ -4,7 +4,8 @@ import subprocess
 import sys
 import textwrap
 
-CORE = ["ctree", "fields", "scramble", "xnet", "importer", "report", "cli", "db", "demo"]
+CORE = ["ctree", "fields", "scramble", "xnet", "importer", "report", "cli", "db", "demo",
+        "protocol", "simphone"]
 
 
 def run_without_qt(code: str) -> subprocess.CompletedProcess:
