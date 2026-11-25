@@ -143,6 +143,7 @@ def test_probe_cli_against_fake_upms_with_simulated_phone(tmp_path):
                               "--code", "4821", "--read", "0100", "4", "--reply-timeout", "2"],
                              capture_output=True, text=True, timeout=60)
         assert "CONNECT" in out.stdout, out.stderr
+        assert "status: phone 5550100000, type DA" in out.stdout
         assert "security code accepted" in out.stdout
         assert "0100: 00 00 00 00" in out.stdout
     finally:

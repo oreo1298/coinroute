@@ -70,6 +70,42 @@ Located while decoding Milestone 3 fields; described here, not copied.
   codes (security access, coin collection, coin box, CDR retrieval, credit
   card). They are not stored as plain digits in SITES.DAT; still to locate.
 
+### The connect and status code (v1.51)
+
+- **Per-port buffers** are allocated when ExpressNet starts (segment 111): a
+  1 KB raw receive buffer, a 1 KB frame buffer (DGROUP 0x97EA, one far pointer
+  per port), a 1,221-byte call structure filled from the site record when a
+  call is set up (0x9790; KEYBOAR2.C copies the firmware-to-download name and
+  the two words at site bytes 1276 and 1278 into it), and a 65-byte status copy
+  (0x99FA). DGROUP 0x97FA holds a 256-byte block per port; from offset 12 it
+  keeps the first 64 bytes of the status frame, `'T'` included.
+- **PHONE.C (segment 62)** is the frame layer: one routine feeds received bytes
+  in and, once a `'T'` is seen, takes the next byte as the length; another
+  re-scans the buffer for `'T'` after noise; a third, when the count runs out,
+  copies the whole frame (`'T'`, `L`, body, check) into the frame buffer.
+- **PHCONECT.C (segment 59)** runs the connect steps as a per-port state
+  machine and stores the step's error code per port (DGROUP 0x9A06). The
+  status checks are in order: frame complete and check byte good (8–10), the
+  short-status padding (L = 0x25), the copy into the per-port block, the
+  phone-number compare (10 digits at frame offset 12 against two numbers in
+  the call structure; 11), and the type-letter compare (12). The `Q` command
+  is built there from the code word with low-byte and high-byte helpers that
+  live in segment 53, next to a hex-text-to-bytes converter.
+- **MODSTAT.C (segment 52)** shows the status clock as `%c%c/%c%c/%c%c` and
+  `%c%c:%c%c:%c%c`, which gives the clock's field order.
+
+### The phone firmware (`PARAM/SOFTWARE/DD*.*`)
+
+The files are download frames (layout in PROTOCOL.md). Rebuilt into memory
+images, the DD70 and DD88 families are 65C02 code: bank A is the fixed bank at
+0xC000–0xFFFF with the vectors (reset, NMI, IRQ) and a `PROTEL` mark just
+below them; banks B–E load at 0x8000. Interrupts arrive on NMI, which switches
+banks and dispatches through a small table on a status register in zero page
+(a custom I/O chip, registers around $20–$2F). DD43 files load at different
+addresses and were not studied. The firmware never loads `'T'` as an
+immediate, so the framing is probably table-driven or done by the I/O chip;
+finding the phone's command handler is the next step there.
+
 ## The modem side (known)
 
 The PC talks Hayes AT to a Protel UPMS1200 (or a generic modem at 300 bps):
@@ -116,10 +152,10 @@ Firmware/rate download files (PARAM/SOFTWARE/DD*.*) start with a text line
 `NAME.EXT SIZE BLOCKS\r\n` followed by binary blocks that begin `T\x08C…`,
 i.e. they appear to be stored already in download-command form.
 
-**Next steps (Milestone 4):** disassemble PHCONECT/PHPOLL/PHFLGVER/PHENDCAL
-around those strings to get exact byte sequences, checksum algorithms and
-timeouts; build a fake payphone that answers them; confirm with one real poll
-logged through fake_upms or a serial sniffer.
+**Next steps (Milestone 4):** the status bytes still marked ❓ in
+PROTOCOL.md, the refusal reply, and the addresses the CDR and coin steps read
+(PHBILAUD.C, segment 57, reads reply bytes 4–14 of its `D` replies); then one
+real poll logged through a serial sniffer to confirm.
 
 ## Tools
 

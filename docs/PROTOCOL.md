@@ -1,13 +1,14 @@
 # The payphone protocol
 
 What coinroute knows about how ExpressNet talks to a Protel phone once the two
-modems are connected. Worked out by studying ExpressNet 3 v1.51 in a session
-(nothing of Protel's is in this repo) and written down in our own words.
-**Nothing here has been checked against a real phone yet** — a capture of one
-real poll is the next step (see the end).
+modems are connected. Worked out by studying ExpressNet 3 v1.51 and the phone
+firmware files it ships (`PARAM/SOFTWARE/DD*.*`) in a session — nothing of
+Protel's is in this repo — and written down in our own words.
+**Nothing here has been checked against a real phone yet**; a capture of one
+real poll would confirm it (see the end).
 
-Confidence: ✅ read directly from how ExpressNet builds or checks the bytes ·
-🟡 probable · ❓ unknown.
+Confidence: ✅ read directly from how ExpressNet builds or checks the bytes, or
+from Protel's own stored frames · 🟡 probable · ❓ unknown.
 
 ## Layers
 
@@ -36,10 +37,15 @@ ExpressNet's own commands all follow the length rule except one: for "A" type
 phones the clear-coin-flag command carries L = 6 for a 5-byte remainder. Treat
 that as a quirk of the original until a capture shows otherwise.
 
-A reply whose first body byte is **`'G'`** means "accepted"; every command
-step checks for it. ✅ What a phone sends instead when it refuses is ❓ (the
-simulator assumes `'E'`). The reply check byte is assumed to follow the same
-rule as commands. 🟡
+The check-byte rule is confirmed by Protel's own data: the firmware download
+files hold several thousand ready-made frames, and every one of their check
+bytes follows it. ✅
+
+Replies come back in the same shape: ExpressNet's receiver waits for `'T'`,
+takes the next byte as the length, and collects that many bytes before it
+looks at the reply. ✅ A reply whose first body byte is **`'G'`** means
+"accepted"; every command step checks for it. ✅ What a phone sends instead
+when it refuses is ❓ (the simulator assumes `'E'`).
 
 ## Timing and retries ✅
 
@@ -62,10 +68,41 @@ type, e.g. clearing the coin flag:
 | C | `I` |
 | D (and others) | `S 01 00 00 00 00 00 00 00` |
 
-The phone reports its type as a small number (1–5) in its status; ExpressNet
-accepts type numbers 1, 4, 5 for A sites, 2, 3, 5 for D and 1–4 for C, and
-otherwise stops with "Phone type mismatch". Where that number sits in the
-status the phone sends: ❓
+The phone reports its type as **two letters** in its status (below), e.g.
+`DA`, `DD` or `CD`; the site has a type *number* 1–5. ExpressNet compares the
+second letter with the site's number and stops with "Phone type mismatch"
+unless they agree:
+
+| Second letter | Site type numbers accepted |
+|---|---|
+| `A` | 1, 4, 5 |
+| `D` | 2, 3, 5 |
+| `C` | 1, 2, 3, 4 |
+
+A phone whose letters are `##` (type not set) can be treated as `DA` when an
+ExpressNet setting allows it. ✅
+
+## The status frame
+
+The first frame after `CONNECT` comes from the phone, unasked. ExpressNet waits
+for it (error 8 if no `'T'` arrives, 9 if it never completes, 10 if its check
+byte is wrong, each after a few retries), keeps its first 64 bytes per port,
+and reads these fields from it (offsets are into the body, after `'T'` and `L`):
+
+| Body bytes | Field | |
+|---|---|---|
+| 0 | first byte; its meaning is not known | ❓ |
+| 1 | read by most poll steps | 🟡 a phone or software kind |
+| 2–7 | flag bits tested by single steps: billing/audit CDRs (byte 2 bits 0xC0, byte 3 bit 0x80), misc (byte 5 bit 0x20), options (byte 6 bit 0x10), rate tables (byte 7 bit 0x01) | 🟡 which step reads which bit ✅; what each bit means 🟡 |
+| 10–19 | the phone's own number, 10 ASCII digits; must equal one of the two numbers ExpressNet dialled from (else error 11) | ✅ |
+| 20–25 | six bytes ExpressNet moves elsewhere in its copy | ❓ |
+| 27–28 | phone type letters, see above (else error 12) | ✅ |
+| 33 | checked for zero by the software-download step | ❓ |
+| 43–55 | the phone's clock, 13 ASCII digits `yymmdd` `w` `hhmmss` — the same layout as the `P` command; the modem-status screen shows it as Date and Time | ✅ |
+
+There are two sizes. Older phones send a **short status (L = 0x25)** that ends
+before the clock; ExpressNet pads its copy with spaces there. Longer statuses
+carry the clock; their exact length is ❓ (ExpressNet keeps at most 64 bytes).
 
 ## Commands
 
@@ -74,8 +111,8 @@ status the phone sends: ❓
 | `D` | address high, address low, count | 5 | reading phone memory: CDR counts, audit and billing records, speed dials | ✅ layout, 🟡 meaning of bytes |
 | `X` | three address bytes, count | 6 | the same reads on phones with more memory | ✅ layout |
 | `S` | address high, address low, 1 or 6 data bytes | 5 / 10 | writing phone memory: clear status flags, clear coin flag, reset call accounting, clear CDR flags | ✅ layout |
-| `Q` | 16-bit value, low byte first | 4 | security code (errors 13/14 follow it) | ✅ layout; ❓ how the 4-digit code becomes the value (number or BCD) |
-| `P` | 13 ASCII digits | 15 | set the phone's clock | ✅ layout; 🟡 order yymmdd, weekday, hhmmss |
+| `Q` | the 4-digit security code as two packed-BCD bytes in reading order (`1234` → `12 34`) | 4 | security code (errors 13/14 follow it) | ✅ (see below) |
+| `P` | 13 ASCII digits | 15 | set the phone's clock | ✅ layout and order: yymmdd, weekday, hhmmss (the status shows the clock the same way) |
 | `K` | two bytes | 4 | clear audit CDRs | ✅ layout |
 | `T` | two bytes | 4 | clear billing CDRs | ✅ layout |
 | `I` | — | 2 | clear coin flag on C type phones | ✅ |
@@ -91,6 +128,36 @@ read at 2E06 for speed dials.
 
 There is also a `Txd` + two bytes frame sent during connection set-up ❓.
 
+### The security code ✅
+
+ExpressNet keeps each site's code in the site record (SITES.DAT bytes
+1278–1279) as a 16-bit value whose hex digits are the code's digits, and sends
+its low byte then its high byte. Stored as bytes, that is simply the code in
+packed BCD: `1234` is sent as `51 12 34` after `'T'` and `L`. Checked on a real
+installation: for every site, those two bytes are the BCD form of the site's
+security access code in its options record (MISCOPT.DAT).
+
+### Downloads (`C`) ✅
+
+The firmware files in `PARAM/SOFTWARE` are a text header line
+(`NAME.EXT SIZE BLOCKS`) followed by ready-made frames, one per line (each
+ends with CR LF, which is not sent). All use command `C`:
+
+| Body bytes | Data frames (L = 136) | Control frames (L = 8) |
+|---|---|---|
+| 0 | `C` | `C` |
+| 1–2 | address, high byte first (0x8000–0xBF80, steps of 128) | 0 0 |
+| 3 | 2 | operation: 6, 1 at the start; 3 at the end of each bank; 0, 5 at the very end |
+| 4 | bank letter `A`–`E` | bank letter, or `Z` for the whole download |
+| 5–6 | a count that falls by one every 256 bytes ❓ | a number ❓ |
+| 7–134 | 128 bytes of program | — |
+
+The phone is built around a **65C02-family processor**. Its program comes in
+16 KB banks that each load through the 0x8000–0xBFFF window: bank A runs fixed
+at 0xC000–0xFFFF (it holds the reset and interrupt vectors) and banks B–E are
+switched into 0x8000–0xBFFF. Its I/O is a custom chip in zero page. Reading the
+phone's side of the protocol from these images is under way.
+
 ## A poll, step by step
 
 ExpressNet's modem-status screen names the steps; the commands are matched to
@@ -98,8 +165,8 @@ them through the error code each step records (✅ where the match is direct).
 
 1. Reset the modem, dial, wait for `CONNECT` (errors 4–7). ✅
 2. Receive the phone's status frame: its check byte, phone number and phone
-   type are checked (errors 8–12). ✅ that it happens; ❓ the frame's layout.
-3. Send the security code — `Q` (errors 13–14). 🟡
+   type are checked (errors 8–12). ✅ (layout above)
+3. Send the security code — `Q` (errors 13–14). ✅
 4. Clear status flags — `S` to DA1F (error 16). ✅
 5. Software version checks, firmware download if one is pending (errors 17–36). ❓
 6. Collect CDR counts — `D`/`X` at 0FF8 (errors 37–39). 🟡
@@ -122,20 +189,24 @@ read carries them is ❓.
   to ExpressNet's error codes: BUSY 5, NO CARRIER 6, time-out 4), answer a
   ring, `+++` / `ATH0`; `SerialLine` for a real port; `.link()` hands the
   connected line to `protocol.Link`.
-- `coinroute probe NUMBER --port DEV --code N` (experimental) — dials, sends the
-  security code, reads memory and hangs up, printing the frames.
+- `coinroute probe NUMBER --port DEV --code 1234` (experimental) — dials,
+  reads and prints the phone's status, sends the security code, reads memory
+  and hangs up, printing the frames.
 - `tools/fake_upms.py --pty --simphone CODE` — the fake modem with a simulated
   phone behind it, so `coinroute probe` and the coming poller can be tried end
   to end without hardware.
-- `coinroute.simphone` — a simulated phone that answers those commands from a
-  64 KB memory image, refuses reads and writes until the right security code,
-  and can drop or spoil replies to exercise retries. Its choices where the real
-  phone is unknown are listed in its docstring.
+- `coinroute.simphone` — a simulated phone that sends its status frame after
+  `CONNECT`, answers those commands from a 64 KB memory image, refuses reads
+  and writes until the right security code, and can drop or spoil replies to
+  exercise retries. Its choices where the real phone is unknown are listed in
+  its docstring.
+- `protocol.Status` / `Link.receive_status()` — the status fields above, with
+  ExpressNet's phone-number and phone-type checks.
 
 ## What a real capture must settle
 
 One logged poll of a real phone by ExpressNet (the bytes between the PC and the
-UPMS1200, both directions, with timing) would answer most of the ❓ above: the
-status frame, the security code encoding, the refusal reply, the read addresses
-for coin totals and CDRs, time-outs, and whether replies use the same check
-byte. `tools/serial_tap.py` records exactly that.
+UPMS1200, both directions, with timing) would confirm everything above and
+answer the remaining ❓: the status bytes not yet understood, the refusal
+reply, the read addresses for coin totals and CDRs, and time-outs.
+`tools/serial_tap.py` records exactly that.

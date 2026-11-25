@@ -93,6 +93,8 @@ def cmd_probe(a):
         print(f"{r.result}")
         link = m.link(timeout=a.reply_timeout)
         try:
+            st = link.receive_status()
+            print(f"status: phone {st.phone}, type {st.phone_type}, clock {st.clock or '(none)'}")
             if a.code is not None:
                 link.security(a.code)
                 print("security code accepted")
@@ -159,7 +161,7 @@ def main(argv=None):
     p.add_argument("--port", required=True, help="serial device of the modem, e.g. /dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=1200)
     p.add_argument("--generic", action="store_true", help="a generic Hayes modem (300 bps), not the UPMS1200")
-    p.add_argument("--code", type=int, help="security code value to send first (see docs/PROTOCOL.md)")
+    p.add_argument("--code", help="the site's 4-digit security code, sent first (see docs/PROTOCOL.md)")
     p.add_argument("--read", nargs=2, metavar=("ADDR", "COUNT"), default=["0FF8", "8"],
                    help="memory to read: hex address and byte count (default 0FF8 8)")
     p.add_argument("--dial-timeout", type=float, default=60.0)

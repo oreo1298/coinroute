@@ -48,8 +48,8 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
     os.write(mo_s, b"\r\nCONNECT 1200\r\n")
     assert b"CONNECT" in read_until(pc_s, b"1200")
 
-    phone = SimPhone(security_code=42)
-    os.write(pc_s, p.cmd_security(42))
+    phone = SimPhone(security_code="4821")
+    os.write(pc_s, p.cmd_security("4821"))
     os.write(mo_s, phone.feed(_frame_from(mo_s)))
     reply = os.read(pc_s, 64)
     assert list(p.FrameReader().feed(reply))[0].is_ack
@@ -65,7 +65,7 @@ def test_tap_passes_bytes_and_logs_frames(tmp_path):
     with redirect_stdout(out):
         tap.decode(str(log_path))
     lines = out.getvalue().splitlines()
-    assert any("PC>MODEM 'Q'" in ln and "51 2a 00" in ln for ln in lines)
+    assert any("PC>MODEM 'Q'" in ln and "51 48 21" in ln for ln in lines)
     assert any("MODEM>PC 'G'" in ln for ln in lines)
     for fd in (pc_m, mo_m):
         os.close(fd)

@@ -6,8 +6,9 @@ phone's behaviour is not known yet, the simulator makes a choice and says so:
 
 - a refused or unknown command is answered with body 'E' (assumed);
 - memory reads and writes are refused until the right security code ('Q');
-- nothing is sent spontaneously after CONNECT (what the phone sends first is
-  still being worked out).
+- `greeting()` is the status frame a phone sends by itself after CONNECT, with
+  the fields ExpressNet is known to check (phone number, type letters, clock);
+  the other status bytes are zero.
 
 Standard library only. `SimTransport` connects a `protocol.Link` straight to a
 `SimPhone` in-process; `serve(fd, phone)` runs one over a pty or serial line.
@@ -18,23 +19,34 @@ import os
 import select
 from collections import deque
 
-from .protocol import ACK, FrameReader, frame
+from .protocol import ACK, FrameReader, frame, security_code_bytes, status_body
 
 NAK = ord("E")  # assumed: what the phone answers to a refused command
 
 
 class SimPhone:
-    def __init__(self, security_code: int = 0, memory: bytes | None = None):
+    def __init__(self, security_code: str | int = "0000", memory: bytes | None = None,
+                 phone: str = "5550100000", phone_type: str = "DA"):
         self.memory = bytearray(memory or bytes(0x10000))
         if len(self.memory) < 0x10000:
             self.memory += bytes(0x10000 - len(self.memory))
-        self.security_code = security_code
+        self.security_code = security_code_bytes(security_code)
+        self.phone = phone
+        self.phone_type = phone_type
         self.unlocked = False
         self.clock: str | None = None
         self.reader = FrameReader()
         self.received: list[bytes] = []  # bodies of the commands it accepted or refused
         self.drop_replies = 0  # fault injection: ignore the next N commands
         self.corrupt_replies = 0  # fault injection: spoil the check byte of the next N replies
+
+    def greeting(self) -> bytes:
+        """The status frame sent right after CONNECT."""
+        import time
+
+        t = time.localtime()
+        clock = time.strftime("%y%m%d", t) + str((t.tm_wday + 1) % 7 + 1) + time.strftime("%H%M%S", t)
+        return frame(status_body(self.phone, self.phone_type, clock))
 
     # --- one command -> one reply ---
 
@@ -54,7 +66,7 @@ class SimPhone:
     def _answer(self, body: bytes) -> bytes:
         letter, args = chr(body[0]), body[1:]
         if letter == "Q" and len(args) == 2:
-            self.unlocked = (args[0] | args[1] << 8) == self.security_code
+            self.unlocked = bytes(args) == self.security_code
             return bytes([ACK if self.unlocked else NAK])
         if letter == "P" and len(args) == 13 and args.isdigit():
             self.clock = args.decode("ascii")
@@ -93,9 +105,10 @@ class SimPhone:
 class SimTransport:
     """A protocol.Transport wired straight to a SimPhone (no threads, no timing)."""
 
-    def __init__(self, phone: SimPhone):
+    def __init__(self, phone: SimPhone, greet: bool = False):
+        """`greet`: the call has just connected, so the phone's status frame is waiting to be read."""
         self.phone = phone
-        self.pending: deque[int] = deque()
+        self.pending: deque[int] = deque(phone.greeting() if greet else b"")
 
     def write(self, data: bytes) -> None:
         self.pending.extend(self.phone.feed(data))
