@@ -84,8 +84,12 @@ Sessions here are headless. Run Qt with `QT_QPA_PLATFORM=offscreen`, render a
 window with `widget.grab().save("/tmp/shot.png")`, and open the PNG to check
 layout, clipping and colours. Do this for every new screen before calling it
 done; Andrew will also run it on his CachyOS desktop and report back.
-`QT_QPA_PLATFORM=offscreen python tools/screenshots.py OUTDIR [--dark]` renders
-them all from the demo route; add new screens to it.
+`QT_QPA_PLATFORM=offscreen python tools/screenshots.py OUTDIR [--dark] [--kde-fallback]`
+renders them all from the demo route; add new screens to it. `--kde-fallback`
+mimics Andrew's desktop with pip's PySide6 (no KDE theme plugin, so Qt's
+fallback palette and a larger font, which `gui/theme.py` replaces with Fusion).
+Size dialogs from their contents (`importdlg.fit_to_contents`), not fixed
+pixels: KWin gives unsized dialogs 640x480.
 
 ## Conventions
 
