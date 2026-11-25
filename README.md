@@ -67,6 +67,18 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+### Editing sites
+
+Add a phone, change its description, group, address, records or security
+code, or take it off the route: in the desktop app's **Sites** menu (Edit
+site… F2, New site… Ctrl+N, Remove site…, Restore removed site…, also on
+the Sites view's right-click menu), or in the terminal version (on a site
+record F2 Edit; in the site list F6 Add and F8 Remove; File Utilities →
+Restore Removed Site). Changes go into the route database, in the same
+record layout ExpressNet uses, and every change is logged (security codes
+masked). A removed site keeps its history and can be put back. The
+ExpressNet folder is never changed.
+
 ### Polling (first version)
 
 coinroute can now call a phone itself, following ExpressNet's steps

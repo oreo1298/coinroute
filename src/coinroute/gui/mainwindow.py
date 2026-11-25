@@ -111,6 +111,8 @@ class MainWindow(QMainWindow):
         self.sites = SitesView()
         self.sites.open_site.connect(self.open_site)
         self.sites.poll_site.connect(self.poll_site)
+        self.sites.edit_site.connect(self.edit_site)
+        self.sites.remove_site.connect(self.remove_site)
         self.settings_view = SettingsView()
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -170,6 +172,13 @@ class MainWindow(QMainWindow):
             lambda: self._close_tab(self.tabs.currentIndex()),
             QKeySequence.StandardKey.Close,
         )
+
+        st = mb.addMenu("&Sites")
+        self.act_edit_site = self._action(st, "&Edit site…", self.edit_selected, "F2")
+        self.act_new_site = self._action(st, "&New site…", self.new_site, "Ctrl+N")
+        self.act_remove_site = self._action(st, "&Remove site…", self.remove_selected)
+        st.addSeparator()
+        self.act_restore_site = self._action(st, "Restore removed &site…", self.restore_site)
 
         md = mb.addMenu("&Modems")
         self.act_poll = self._action(md, "&Poll now…", self.poll_selected, "Ctrl+P")
@@ -261,6 +270,8 @@ class MainWindow(QMainWindow):
         self.act_export.setEnabled(has)
         self.act_reports.setEnabled(has)
         self.act_poll.setEnabled(has)
+        for a in (self.act_edit_site, self.act_new_site, self.act_remove_site, self.act_restore_site):
+            a.setEnabled(has)
         self.act_close.setEnabled(has)
         if not has:
             self.setWindowTitle("coinroute")
@@ -277,6 +288,84 @@ class MainWindow(QMainWindow):
         )
         self.source_label.setToolTip(str(self.db.path.resolve()))
         self.end_label.setText(f"Data ends {_nice_time(meta.get('data_end'))}")
+
+    # --- editing sites ---
+
+    def _current_phone(self) -> str | None:
+        w = self.tabs.currentWidget()
+        return getattr(w, "phone", None) or self.sites.selected_phone()
+
+    def edit_selected(self) -> None:
+        phone = self._current_phone()
+        if phone:
+            self.edit_site(phone)
+        else:
+            QMessageBox.information(self, "Edit site", "Select a site in the Sites view first.")
+
+    def edit_site(self, phone: str):
+        from .sitedlg import SiteDialog
+
+        if not self.db:
+            return None
+        if self.db.site(phone).get("removed"):
+            QMessageBox.information(self, "Edit site", "This site was removed; it has no record to edit.")
+            return None
+        dlg = SiteDialog(str(self.db.path), phone, self)
+        dlg.accepted.connect(self.refresh)
+        dlg.open()
+        return dlg
+
+    def new_site(self):
+        from .sitedlg import SiteDialog
+
+        if not self.db:
+            return None
+        dlg = SiteDialog(str(self.db.path), None, self)
+        dlg.accepted.connect(self.refresh)
+        dlg.open()
+        return dlg
+
+    def remove_selected(self) -> None:
+        phone = self._current_phone()
+        if phone:
+            self.remove_site(phone)
+
+    def remove_site(self, phone: str, confirm: bool = True) -> bool:
+        from ..sites import SiteEditor, SiteError
+
+        if not self.db:
+            return False
+        if confirm and QMessageBox.question(
+            self, "Remove site",
+            f"Remove {phone_display(phone)} from the route?\n\nIts history stays, and Sites → Restore "
+            "removed site puts it back.") != QMessageBox.StandardButton.Yes:
+            return False
+        try:
+            with SiteEditor(str(self.db.path)) as ed:
+                ed.remove(phone)
+        except SiteError as e:
+            QMessageBox.warning(self, "Remove site", str(e))
+            return False
+        self.refresh()
+        return True
+
+    def restore_site(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        from ..sites import SiteEditor, SiteError, digits_only
+
+        if not self.db:
+            return
+        text, ok = QInputDialog.getText(self, "Restore removed site", "Phone number of the removed site:")
+        if not ok or not text.strip():
+            return
+        try:
+            with SiteEditor(str(self.db.path)) as ed:
+                ed.restore(digits_only(text))
+        except SiteError as e:
+            QMessageBox.warning(self, "Restore removed site", str(e))
+            return
+        self.refresh()
 
     # --- polling ---
 
