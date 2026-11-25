@@ -271,3 +271,15 @@ def test_port_settings():
     assert xnet.framing_text("N82") == "8 bits, no parity, 2 stop bits"
     assert xnet.framing_text("E71") == "7 bits, even parity, 1 stop bit"
     assert xnet.port_settings(b"short") == {}
+
+
+def test_site_security_code_is_packed_bcd():
+    from coinroute.demo import site
+
+    r = site("5550100123", "TEST SITE", security_code="4821")
+    assert r[1278:1280] == b"\x48\x21"
+    assert xnet.site_record(r)["security_code"] == "4821"
+    assert xnet.site_security_code(r[:1000]) is None
+    bad = bytearray(r)
+    bad[1278] = 0x4A  # not a decimal digit pair
+    assert xnet.site_security_code(bytes(bad)) is None

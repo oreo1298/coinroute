@@ -235,6 +235,7 @@ def site_record(r: bytes) -> dict:
         "zip": cstr(r[1066:1077]).rstrip("- "),
         "firmware_current": cstr(r[1250:1263]),
         "firmware_target": cstr(r[1263:1276]),
+        "security_code": site_security_code(r),
         "raw": r,
     }
 
@@ -280,6 +281,14 @@ def port_record(r: bytes) -> dict:
         "line_number": cstr(r[232:246]),
         "raw": r,
     }
+
+
+def site_security_code(r: bytes) -> str | None:
+    """The 4-digit code ExpressNet sends with 'Q', stored at 1278 as packed BCD ("1234" = 12 34)."""
+    if len(r) < 1280:
+        return None
+    digits = r[1278:1280].hex()
+    return digits if digits.isdigit() else None
 
 
 def port_settings(r: bytes) -> dict:

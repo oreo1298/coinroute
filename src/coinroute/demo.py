@@ -187,6 +187,7 @@ def site(
     address: str = "1 MAIN ST",
     zip_code: str = "99999-    ",
     firmware_target: str | None = None,
+    security_code: str = "0000",
 ) -> bytes:
     """SITES/SITES.DAT record (2456 bytes)."""
     r = bytearray(2456)
@@ -205,6 +206,7 @@ def site(
     put(r, 1066, zip_code, 11)
     put(r, 1250, firmware, 13)
     put(r, 1263, firmware_target or firmware, 13)
+    r[1278:1280] = bytes.fromhex(security_code)  # packed BCD, as ExpressNet stores it
     return bytes(r)
 
 
@@ -594,6 +596,7 @@ def make_demo(
             state=s.state,
             firmware=fw,
             firmware_target="DD7019-0023R",
+            security_code="4821",  # the options records' access code
             site_no=s.site_no,
             rate=rate_names[s.state],
             options="NIGHT-POLL" if s.i % 3 else "STANDARD",

@@ -191,7 +191,9 @@ bytes of detail, named after the columns of ExpressNet's audit export:
 | 1066 | 11 | ZIP | ✅ |
 | 1250 | 13 | firmware in phone (`DD7019-0023R`) | 🟡 |
 | 1263 | 13 | firmware to download | 🟡 |
-| rest | | security code, flags, poll status, contact fields … | ❓ |
+| 1276 | 2 | u16, copied into ExpressNet's call set-up with the code below; same value on every site seen | ❓ |
+| 1278 | 2 | **security code** sent with `Q`: packed BCD in reading order (`1234` = bytes 12 34). Equals the site's options-record access code on every real site checked | ✅ |
+| rest | | flags, poll status, contact fields … | ❓ |
 
 ## SYSTEM/X3SYSPAR.DAT — 211 bytes, XOR-scrambled ✅
 
@@ -221,7 +223,7 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 | LOCAL/POLLnnnn.BAD | 27 per entry, no header | phones a run of poll list *nnnn* could not reach, one entry each: u8 @0 (0), phone [11] @1, group [7] @12, u16 position in the run @19, u16 @21 (0), u16 poll-list number @23 (matches *nnnn*), u16 @25 (6 in every entry seen: perhaps the error code, 6 = no carrier) 🟡. Plain file, not c-tree. Not imported. |
 | LOCAL/TRACE/TRACEn.TXT | text | ExpressNet's own log: an hourly time stamp and internal error lines with source file and line. No line traffic. |
 | LOCAL/REPCTL, RPTQUE, PRINTERS, EDMANPOL | | ❓ (reports, printers, manual polls) |
-| PARAM/SOFTWARE/DD*.* | | phone firmware; text header `name size blocks\r\n`, then what look like download blocks ❓ |
+| PARAM/SOFTWARE/DD*.* | | phone firmware as ready-made `C` download frames, one per CR LF line after a text header `name size blocks`; frame layout in docs/PROTOCOL.md ✅ |
 
 ## PARAM/MISCOPT.DAT — 420 bytes, phone options ("options record")
 
