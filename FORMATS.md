@@ -54,8 +54,8 @@ Text dates appear as `yymmdd` (CDR files), `yyyymmdd` (audit CDRs) and
 | 45 | u8 | audit records the phone held ("Aud RCnt.") | 🟡 |
 | 46 | u8 | billing records collected ("B RCol.") | 🟡 |
 | 47 | u8 | audit records collected ("A RCol.") | 🟡 |
-| 48 | 8 | trouble flags ("CFlags"), table below | ✅ |
-| 56 | 8 | more flags ("PFlags"): byte 56 holds FC (0x01) and CT (0x02); the rest ❓ | 🟡 |
+| 48 | 9 | trouble flags ("CFlags"), table below: the phone's status bytes 1–9 stored unchanged (docs/PROTOCOL.md); byte 56 holds FC (0x01) and CT (0x02) | ✅ |
+| 57 | 7 | ExpressNet's own flags for the call ("PFlags"), e.g. that a pair of CDR counts disagreed | 🟡 |
 | 64 | u32 | lifetime coin total, cents | ✅ matches printed Coin Report |
 | 68 | u32 | cash currently in box, cents | ✅ matches "In Box" column |
 | 72 | u32 | amount taken out when the box was emptied, cents ("Amt. Col.") | ✅ non-zero only on polls with the E$ flag (299 of 299 in a real installation) |

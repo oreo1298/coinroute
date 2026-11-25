@@ -176,3 +176,16 @@ def test_cdr_counts_and_ring_reads():
     link = p.Link(SimTransport(phone), timeout=0.05)
     link.security("4821")
     assert link.cdr_counts().audit_count == 8
+
+
+def test_status_money_and_flags():
+    from coinroute.xnet import TROUBLE_FLAGS, trouble_flags
+
+    flags = bytes([0x01, 0, 0, 0, 0, 0, 0x01, 0, 0])  # E$ (48/0x01) and CB (54/0x01)
+    body = p.status_body("5550100123", "DD", "2605027010509", flags=flags, coin_total=123456,
+                         percent_full=42, cash_collected=1550)
+    st = p.parse_status(body)
+    assert (st.coin_total, st.percent_full, st.cash_collected) == (23456, 42, 1550)  # 5-digit counter
+    assert st.clock == "2605027010509" and st.flags == flags
+    coin = bytes(48) + st.flags  # where ExpressNet stores them in a COIN.DAT record
+    assert {c for c, *_ in TROUBLE_FLAGS if c in trouble_flags(coin.ljust(88, b"\0"))} >= {"E$", "CB"}

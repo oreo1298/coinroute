@@ -110,18 +110,27 @@ Offsets below are into the body (after `'T'` and `L`) in the newest layout:
 | Body bytes | Field | |
 |---|---|---|
 | 0 | first byte; its meaning is not known | ❓ |
-| 1 | read by most poll steps | 🟡 a phone or software kind |
-| 2–7 | flag bits tested by single steps: billing/audit CDRs (byte 2 bits 0xC0, byte 3 bit 0x80), misc (byte 5 bit 0x20), options (byte 6 bit 0x10), rate tables (byte 7 bit 0x01) | 🟡 which step reads which bit ✅; what each bit means 🟡 |
+| 1–9 | the phone's **trouble flags**, stored unchanged as COIN.DAT bytes 48–56 (FORMATS.md has the table). The poll steps test their own flags here: Bill CDR Full/Limit/Err before collecting billing records, Clock Reset before the clock step, CTB rate bad before a rate download | ✅ |
 | 10–19 | the phone's own number, 10 ASCII digits; must equal one of the two numbers ExpressNet dialled from (else error 11) | ✅ |
-| 20–25 | six bytes ExpressNet moves elsewhere in its copy | ❓ |
+| 21–25 | the phone's running coin total, cents, 5 ASCII digits ("CurrAccumInPhone" in ExpressNet's trace). ExpressNet adds the change since the last poll to the lifetime total, so the counter may wrap | ✅ |
 | 27–28 | phone type letters, see above (else error 12) | ✅ |
 | 29–32 | the firmware model number after the letters (e.g. `7019` in `DD7019`); the call-record step compares it with 4204 | ✅ that it is read as a number; 🟡 that it is the model |
 | 33 | checked for zero by the software-download step | ❓ |
+| 39–41 | coin box percent full, 3 ASCII digits ("PercentFull") | ✅ |
 | 43–55 | the phone's clock, 13 ASCII digits `yymmdd` `w` `hhmmss` — the same layout as the `P` command; the modem-status screen shows it as Date and Time | ✅ |
+| 57–61 | cash collected when the box was last emptied, cents, 5 ASCII digits ("CashCollected") | ✅ |
 
 There are two sizes. Older phones send a **short status (L = 0x25)** that ends
 before the clock; ExpressNet pads its copy with spaces there. Longer statuses
 carry the clock; their exact length is ❓ (ExpressNet keeps at most 64 bytes).
+For `A`-format phones with a long status, ExpressNet moves body bytes 20–25 to
+56–61 (where the newest format keeps the cash collected).
+
+ExpressNet's coin record for the poll (STORCOIN.C) is built from this frame:
+the flags above, the record counts from the CDR step (bytes 44–47), its own
+per-call flags (57–63), and the lifetime total, cash in box and amount
+collected (64, 68, 72) worked out from the three money fields and the previous
+poll.
 
 ## Commands
 
@@ -196,8 +205,8 @@ them through the error code each step records (✅ where the match is direct).
 10. Reset the phone's clock — `P` (error 73). ✅
 11. End the call — `O`, `N`; then `+++`, `OK`, `ATH0` (error 99 if stopped). 🟡
 
-Coin totals and the cash-box amount reach COIN.DAT during this sequence; which
-read carries them is ❓.
+Coin totals, the cash-box amount and the trouble flags all come from the
+status frame (above), not from a memory read. ✅
 
 ## Collecting call records (CDRs) ✅
 

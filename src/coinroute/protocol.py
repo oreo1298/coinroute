@@ -158,10 +158,14 @@ def cmd_simple(letter: str) -> bytes:
 
 # Offsets are in the newest layout; older phones' statuses are normalised to it first, as
 # ExpressNet does (normalize_status).
+STATUS_FLAGS = slice(1, 10)    # trouble flags; stored unchanged as COIN.DAT bytes 48-56
 STATUS_PHONE = slice(10, 20)   # the phone's own number, 10 ASCII digits
+STATUS_COINS = slice(21, 26)   # running coin total in the phone, cents, 5 ASCII digits (wraps)
 STATUS_TYPE = slice(27, 29)    # two letters, e.g. "DA", "DD", "CD"; "##" = not set
 STATUS_MODEL = slice(29, 33)   # digits after the letters (firmware model, e.g. 7019)
+STATUS_PERCENT = slice(39, 42)  # coin box percent full, 3 ASCII digits
 STATUS_CLOCK = slice(43, 56)   # yymmdd, weekday, hhmmss (13 ASCII digits); absent in short statuses
+STATUS_COLLECTED = slice(57, 62)  # cash collected when the box was last emptied, cents, 5 ASCII digits
 SHORT_STATUS = 0x25            # L of the short status older phones send (no clock)
 # older status formats, by first body byte: where ExpressNet inserts empty bytes, and how many
 STATUS_FORMS = {ord("@"): (4, 5), ord("A"): (2, 7)}
@@ -200,6 +204,28 @@ class Status:
         d = self.body[STATUS_MODEL]
         return int(d) if len(d) == 4 and d.isdigit() else None
 
+    def _number(self, where: slice) -> int | None:
+        d = self.body[where]
+        return int(d) if len(d) == where.stop - where.start and d.isdigit() else None
+
+    @property
+    def coin_total(self) -> int | None:
+        """The phone's running coin total in cents (a 5-digit counter; ExpressNet adds the difference)."""
+        return self._number(STATUS_COINS)
+
+    @property
+    def percent_full(self) -> int | None:
+        return self._number(STATUS_PERCENT)
+
+    @property
+    def cash_collected(self) -> int | None:
+        return self._number(STATUS_COLLECTED)
+
+    @property
+    def flags(self) -> bytes:
+        """The 9 trouble-flag bytes, laid out like COIN.DAT bytes 48-56 (xnet.TROUBLE_FLAGS)."""
+        return self.body[STATUS_FLAGS].ljust(9, b"\0")
+
     @property
     def clock(self) -> str | None:
         """The phone's clock as 'yymmddwhhmmss', or None when the status has none."""
@@ -223,9 +249,11 @@ def parse_status(body: bytes) -> Status:
 
 
 def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, flags: bytes = b"",
-                model: int | None = 7019) -> bytes:
+                model: int | None = 7019, coin_total: int = 0, percent_full: int = 0,
+                cash_collected: int = 0) -> bytes:
     """A newest-format status body with the known fields filled in (simulator, tests). Unknown bytes are 0."""
-    b = bytearray(STATUS_CLOCK.stop if clock else 36)
+    b = bytearray(STATUS_COLLECTED.stop if clock else 36)
+    b[STATUS_COINS] = f"{coin_total % 100000:05d}".encode("ascii")
     b[0] = ord("S")  # assumed: the newest format's first byte is not known (older ones use '@' / 'A')
     b[1:1 + len(flags)] = flags
     b[STATUS_PHONE] = phone.encode("ascii")[:10].ljust(10, b"0")
@@ -233,7 +261,9 @@ def status_body(phone: str, phone_type: str = "DA", clock: str | None = None, fl
     if model is not None:
         b[STATUS_MODEL] = f"{model:04d}".encode("ascii")
     if clock:
+        b[STATUS_PERCENT] = f"{percent_full:03d}".encode("ascii")
         b[STATUS_CLOCK] = clock.encode("ascii")
+        b[STATUS_COLLECTED] = f"{cash_collected % 100000:05d}".encode("ascii")
     return bytes(b)
 
 
