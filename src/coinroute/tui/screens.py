@@ -14,7 +14,7 @@ from ..db import RouteDB
 from ..fields import phone_display
 from ..reports import coin_report_text, default_period, trouble_report_text
 from ..xnet import SECURITY_CODES, TROUBLE_FLAGS, framing_text
-from .widgets import QUIT, Col, Form, Item, Menu, Message, Prompt, Section, Table, TextView
+from .widgets import POP, QUIT, Col, Form, Item, Menu, Message, Prompt, Screen, Section, Table, TextView
 
 FMT = "%Y-%m-%d %H:%M"
 NOT_YET = "coinroute can't do this yet. It is planned; see docs/ROADMAP.md."
@@ -336,10 +336,30 @@ class Route:
         return Table("POLLING LISTS", cols, self.db.poll_lists())
 
     def manual_poll(self) -> Table:
-        return self.site_picker(
-            then=lambda r: "Polling phones from coinroute is being built (docs/ROADMAP.md, Milestone 5). "
-                           f"For now, poll {r['phone']} from ExpressNet.",
-            title="MANUAL POLL - SELECT SITE")
+        return self.site_picker(then=lambda r: self.poll_prompt(r["phone_digits"]),
+                                title="MANUAL POLL - SELECT SITE")
+
+    def poll_prompt(self, phone: str):
+        from ..poller import PollStore, site_for_poll
+
+        site = site_for_poll(self.db, phone)
+        if site is None:
+            return "This site has no site record, so it can't be polled."
+        with PollStore(self.path) as st:
+            port, baud = st.setting("port", "SIM"), st.setting("baud", "9600")
+
+        def done(v):
+            port, baud = v[0].strip() or "SIM", v[1].strip() or "9600"
+            if not baud.isdigit():
+                return "The speed must be a number, e.g. 9600."
+            with PollStore(self.path) as st:
+                st.set_setting("port", port)
+                st.set_setting("baud", baud)
+            return PollScreen(self, site, port, int(baud))
+
+        return Prompt(f"MANUAL POLL  {phone_display(phone)}",
+                      [("Modem port (SIM = simulated phone)", port), ("PC-to-modem speed", baud)], done,
+                      note="e.g. /dev/ttyUSB0 or COM1. SIM tries the poll on a simulated phone.")
 
     def modem_setup(self) -> Table:
         cols = [Col("Modem", "name", 10), Col("Description", "description", 36), Col("Init", "init", 28)]
@@ -437,6 +457,80 @@ class Route:
             return f"Wrote {len(files)} CSV files to {Path(out).resolve()}."
 
         return Prompt("EXPORT DATA", [("Folder for the CSV files", "export")], done)
+
+
+class PollScreen(Screen):
+    """One poll, run in the background; the steps appear as they happen."""
+
+    def __init__(self, route: Route, site: dict, port: str, baud: int, start: bool = True):
+        self.route, self.site, self.port, self.baud = route, site, port, baud
+        self.title = f"POLLING  {phone_display(site['phone'])}  {site.get('description') or ''}".rstrip()
+        self.lines: list[str] = []
+        self.result: str | None = None
+        self.done = False
+        self.keys = (("", "Polling…"),)
+        self.thread = None
+        if start:
+            import threading
+
+            self.thread = threading.Thread(target=self.run, daemon=True)
+            self.thread.start()
+
+    def run(self) -> None:
+        from ..modem import UPMS1200, Modem, open_line
+        from ..poller import Poller, PollStore, simulated_phone
+        from ..simphone import SimModemLine
+
+        line = None
+        try:
+            if self.port.upper() == "SIM":
+                line = SimModemLine(simulated_phone(self.route.path, self.site))
+                self.lines.append("(simulated phone: nothing is dialled)")
+            else:
+                line = open_line(self.port, self.baud)
+            out = Poller(Modem(line, UPMS1200), progress=self.lines.append).poll(self.site)
+            with PollStore(self.route.path) as st:
+                st.record(self.site, out)
+            st_ = out.status
+            if out.ok and st_:
+                self.result = (f"Poll complete. Box {st_.percent_full or 0}% full; flags: "
+                               f"{' '.join(_flag_names(st_.flags)) or 'none'}. Saved.")
+            else:
+                self.result = f"Poll failed: {out.message} (code {out.code}). Saved."
+        except Exception as e:  # noqa: BLE001 - shown on the screen
+            self.result = f"Poll stopped: {e}"
+        finally:
+            if line is not None and hasattr(line, "close"):
+                line.close()
+            self.done = True
+            self.keys = (("ESC", "Back"),)
+
+    def draw(self, c, top: int, height: int) -> None:
+        _, cols = c.size()
+        w = min(cols - 2, 70)
+        x = (cols - w) // 2
+        c.fill(top, x, height, w, "normal")
+        c.box(top, x, height, w, title=self.title[: w - 6])
+        shown = self.lines[-(height - 5):]
+        for i, ln in enumerate(shown):
+            style = "bad" if ln.startswith("Failed") else "normal"
+            c.put(top + 2 + i, x + 3, ln[: w - 6], style)
+        if self.result:
+            c.put(top + height - 2, x + 3, self.result[: w - 6], "good" if "complete" in self.result else "warn")
+
+    def status(self) -> str:
+        return "Done - ESC to go back" if self.done else f"Calling on {self.port}…"
+
+    def key(self, k: str):
+        if k == "ESC" and self.done:
+            return POP
+        return None
+
+
+def _flag_names(flags: bytes) -> list[str]:
+    from ..xnet import trouble_flags
+
+    return trouble_flags(bytes(48) + bytes(flags))
 
 
 def make_app(db_path: str | None = None):

@@ -137,3 +137,71 @@ def serve(fd: int, phone: SimPhone, stop_after: float | None = None) -> None:
         out = phone.feed(data)
         if out:
             os.write(fd, out)
+
+
+class SimModemLine:
+    """A modem line with a simulated phone at the far end, all in-process (any platform).
+
+    Answers Hayes commands like the UPMS1200 (OK, CONNECT 1200, BUSY, NO CARRIER), and once
+    connected sends the phone's status and passes data to it, until "+++" and ATH0. Time is
+    virtual: waiting for a reply that never comes just moves the clock, so tests run instantly.
+    `answer`: "connect", "busy", "no carrier" or "no answer" (what dialling gets).
+    """
+
+    def __init__(self, phone: SimPhone | None = None, answer: str = "connect", speed: int = 1200):
+        self.phone = phone or SimPhone()
+        self.answer = answer
+        self.speed = speed
+        self.out = bytearray()
+        self.online = False
+        self.cmd = bytearray()
+        self.dialled: list[str] = []
+        self.t = 0.0
+
+    # transport interface (modem.Modem and protocol.Link)
+    def monotonic(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.t += s
+
+    def read(self, n: int, timeout: float) -> bytes:
+        if not self.out:
+            self.t += timeout
+            return b""
+        data = bytes(self.out[:n])
+        del self.out[:n]
+        return data
+
+    def write(self, data: bytes) -> None:
+        if self.online:
+            if data == b"+++":
+                self.online = False
+                self.out += b"\r\nOK\r\n"
+                return
+            self.out += self.phone.feed(data)
+            return
+        for b in data:
+            if b in (13, 10):
+                if self.cmd:
+                    self._command(self.cmd.decode("ascii", "replace").strip().upper())
+                self.cmd.clear()
+            else:
+                self.cmd.append(b)
+
+    def _command(self, c: str) -> None:
+        if not c.startswith("AT"):
+            return
+        if c.startswith("ATD"):
+            self.dialled.append(c[4:] if c[3:4] in ("T", "P") else c[3:])
+            result = {"connect": f"CONNECT {self.speed}", "busy": "BUSY", "no carrier": "NO CARRIER",
+                      "no answer": ""}[self.answer]
+            if result:
+                self.out += f"\r\n{result}\r\n".encode("ascii")
+            if self.answer == "connect":
+                self.online = True
+                self.out += self.phone.greeting()
+                self.phone.unlocked = False
+            self.t += 5.0  # dialling and the modems' handshake take a while
+            return
+        self.out += b"\r\nOK\r\n"

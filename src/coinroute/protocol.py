@@ -379,11 +379,12 @@ class Link:
 
     def receive(self, timeout: float | None = None) -> Frame | None:
         """The next whole frame from the phone, or None on time-out."""
-        deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
+        clock = getattr(self.t, "monotonic", time.monotonic)  # a simulated line brings its own clock
+        deadline = clock() + (self.timeout if timeout is None else timeout)
         while True:
             for f in self.reader.feed(b""):
                 return f
-            left = deadline - time.monotonic()
+            left = deadline - clock()
             if left <= 0:
                 return None
             data = self.t.read(256, left)

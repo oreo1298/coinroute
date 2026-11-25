@@ -105,6 +105,7 @@ class App:
             except AttributeError:
                 pass
             c = CursesCanvas(scr)
+            scr.timeout(250)  # redraw a few times a second, so running polls show their progress
             while self.running:
                 rows, cols = c.size()
                 scr.erase()
@@ -119,13 +120,15 @@ class App:
 
     @staticmethod
     def _read(scr) -> str:
+        import curses
+
         try:
             ch = scr.get_wch()
         except KeyboardInterrupt:
             return "ESC"
+        except curses.error:  # no key within the time-out
+            return ""
         if isinstance(ch, int):
-            import curses
-
             name = curses.keyname(ch).decode("ascii", "replace")
             if name.startswith("KEY_F(") and name.endswith(")"):
                 return "F" + name[6:-1]

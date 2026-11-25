@@ -189,6 +189,8 @@ class _DataTransport:
 
     def __init__(self, modem: Modem):
         self.m = modem
+        if hasattr(modem.t, "monotonic"):
+            self.monotonic = modem.t.monotonic
 
     def write(self, data: bytes) -> None:
         self.m._write(data)
@@ -241,3 +243,38 @@ class SerialLine:
 
     def close(self) -> None:
         self._os.close(self.fd)
+
+
+class PySerialLine:
+    """A serial port through pyserial (`pip install coinroute[modem]`): works on Windows too."""
+
+    def __init__(self, port: str, baud: int = 9600, framing: str = "N81"):
+        import serial  # pyserial
+
+        parity = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}[framing[0]]
+        self.s = serial.Serial(port, baud, bytesize=int(framing[1]), parity=parity,
+                               stopbits=int(framing[2]), timeout=0)
+
+    def write(self, data: bytes) -> None:
+        self.s.write(data)
+        self.s.flush()
+
+    def read(self, n: int, timeout: float) -> bytes:
+        self.s.timeout = max(0.0, timeout)
+        first = self.s.read(1)
+        if not first:
+            return b""
+        self.s.timeout = 0
+        return first + self.s.read(max(0, n - 1))
+
+    def close(self) -> None:
+        self.s.close()
+
+
+def open_line(port: str, baud: int = 9600):
+    """The best transport for a serial port here: pyserial when installed, else POSIX termios."""
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        return SerialLine(port, baud)
+    return PySerialLine(port, baud)

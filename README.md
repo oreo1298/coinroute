@@ -67,6 +67,26 @@ coinroute users /path/to/XNET         # ExpressNet logins and passwords
 The XNET folder is only read. Every imported row keeps the original record
 bytes, so a later version can decode more fields from the same database.
 
+### Polling (first version)
+
+coinroute can now call a phone itself, following ExpressNet's steps
+(docs/PROTOCOL.md): dial, read the phone's status (coin counter, cash
+collected, how full the box is, trouble flags, clock), send the site's
+security code, clear the coin flag once a collection is noted, set the
+phone's clock, hang up. The result goes into the route database like
+ExpressNet's own records, so the Sites view, history and reports show it.
+
+```sh
+coinroute poll route.db 210-555-0108 --port /dev/ttyUSB0   # Windows: --port COM1 (pip install '.[modem]')
+coinroute poll route.db 210-555-0108 --simulate            # try it on a simulated phone first
+```
+
+In the terminal version: Modems → Manual Polling (port `SIM` for the
+simulated phone). **This has not been tried on a real phone yet**: run the
+first real polls while ExpressNet is still at hand, ideally recording the
+line with `tools/serial_tap.py`. Call records are only read with `--cdrs`
+and stay in the phone until the command that clears them is known.
+
 ### Terminal version
 
 For anyone who knows ExpressNet's screens: the same numbered menus, the same

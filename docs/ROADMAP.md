@@ -182,6 +182,19 @@ without hardware. Confirm against a real phone before trusting it.
 
 ## Milestone 5 — polling service
 
+**Done so far:** `coinroute.poller` runs one poll with ExpressNet's steps and
+error codes and stores it in the route database (coin_polls / comm_errors,
+plus coinroute's own `polls` table with the raw status frame and call log);
+lifetime coins and cash in box follow the phone's 5-digit counter (wraps and
+resets handled). `coinroute poll DB PHONE --port DEV | --simulate`, and
+Modems → Manual Polling in the terminal version. `simphone.SimModemLine`
+simulates modem and phone in-process. **Next:** the first real poll (with
+`tools/serial_tap.py` recording), clearing call records (`T`/`K` arguments),
+call accounting, poll lists on a schedule, incoming calls, a "Poll now"
+button in the desktop app.
+
+The original plan:
+
 pyserial; the UPMS1200 profile (init `ATM1L0E0Q0V1X3S10=255S0=0S9=2S7=100&D2`,
 answer `ATA`, dial `ATDT`, reset `ATZ`, hang-up `+++` / `ATH0`); the poll-list
 schedule (outgoing nightly, incoming window); incoming calls (RING → ATA);
