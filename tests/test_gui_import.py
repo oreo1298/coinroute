@@ -64,3 +64,33 @@ def test_import_dialog_validates_source(qtbot, demo_xnet, tmp_path):
     assert dlg.dest.text().endswith(".db")
     dlg.dest.setText(str(tmp_path / "x.db"))
     assert dlg.job().source == demo_xnet
+
+
+def test_result_dialog_shows_every_count_row(qtbot, qapp, demo_xnet, tmp_path):
+    from coinroute.gui.importdlg import run_import
+
+    outcome = run_import(ImportJob(demo_xnet, tmp_path / "r.db"), lambda s, n: None)
+    base = qapp.font()
+    try:
+        for scale in (1.0, 1.25):  # larger desktop fonts must not cut the last row off
+            f = qapp.font()
+            f.setPointSizeF(base.pointSizeF() * scale)
+            qapp.setFont(f)
+            res = ImportResultDialog(outcome)
+            qtbot.addWidget(res)
+            res.show()
+            qtbot.waitExposed(res)
+            t = res.counts
+            last = t.rowCount() - 1
+            assert t.rowViewportPosition(last) + t.rowHeight(last) <= t.viewport().height(), scale
+    finally:
+        qapp.setFont(base)
+
+
+def test_dialogs_open_at_their_natural_height(qtbot, demo_xnet, tmp_path):
+    dlg = ImportDialog(source=str(demo_xnet))
+    qtbot.addWidget(dlg)
+    assert dlg.height() == dlg.sizeHint().height() < 400
+    prog = ImportProgressDialog(ImportJob(demo_xnet, tmp_path / "p.db"))
+    qtbot.addWidget(prog)
+    assert prog.height() == prog.sizeHint().height()

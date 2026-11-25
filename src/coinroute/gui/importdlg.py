@@ -72,6 +72,13 @@ def finish_import(outcome: ImportOutcome) -> Path:
     return outcome.job.dest
 
 
+def fit_to_contents(dialog: QDialog, width: int = 0) -> None:
+    """Open at the natural size. Without an explicit size some window managers (KWin on Wayland)
+    give a new dialog a default 640x480 and leave a gap above the buttons."""
+    hint = dialog.sizeHint()
+    dialog.resize(max(width, dialog.minimumWidth(), hint.width()), hint.height())
+
+
 def default_destination(source: Path) -> Path:
     docs = Path(
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) or Path.home()
@@ -143,6 +150,7 @@ class ImportDialog(QDialog):
         self.source.textChanged.connect(self._validate)
         self.dest.textChanged.connect(self._dest_edited)
         self._validate()
+        fit_to_contents(self)
 
     @staticmethod
     def _row(edit: QLineEdit, button: QPushButton) -> QWidget:
@@ -289,6 +297,7 @@ class ImportProgressDialog(QDialog):
         self._clock.timeout.connect(self._tick)
         self._clock.start(500)
 
+        fit_to_contents(self)
         self.worker = Worker(lambda progress: run_import(job, progress))
         self.worker.progress.connect(self._progress)
         self.worker.finished.connect(self._finished)
@@ -355,7 +364,7 @@ class ImportResultDialog(QDialog):
     def __init__(self, outcome: ImportOutcome, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Import finished")
-        self.setMinimumSize(620, 520)
+        self.setMinimumWidth(620)
         rep = outcome.report
         dest = outcome.job.dest
 
@@ -393,12 +402,16 @@ class ImportResultDialog(QDialog):
         hh = self.counts.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        row_h = self.fontMetrics().height() + 8
-        self.counts.verticalHeader().setDefaultSectionSize(row_h)
-        self.counts.setMinimumHeight(
-            min(len(rep.counts), 15) * row_h + self.counts.horizontalHeader().sizeHint().height() + 4
-        )
+        vh = self.counts.verticalHeader()
+        vh.setDefaultSectionSize(self.fontMetrics().height() + 8)
         hh.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # tall enough for every row as this style actually draws them (fonts differ between desktops)
+        shown = min(len(rep.counts), 15)
+        self.counts.setMinimumHeight(
+            vh.sectionSize(0) * shown + hh.sizeHint().height() + 2 * self.counts.frameWidth() + 2
+            if shown
+            else 0
+        )
 
         lay = QVBoxLayout(self)
         lay.addWidget(head)
@@ -435,3 +448,4 @@ class ImportResultDialog(QDialog):
         self.open_btn.setDefault(True)
         buttons.accepted.connect(self.accept)
         lay.addWidget(buttons)
+        fit_to_contents(self, width=640)
