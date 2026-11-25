@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .fields import datetime_to_minutes
 from .scramble import KEY_SALT_OFFSET, PW_OFFSET, encode_password, password_key, scramble_syspar
-from .xnet import CALL_CATEGORIES, TROUBLE_FLAGS
+from .xnet import CALL_CATEGORIES, SECURITY_CODES, TROUBLE_FLAGS
 
 FLAG_BITS = {code: (off, mask) for code, _, off, mask in TROUBLE_FLAGS}
 CATEGORY = {name: i for i, name in enumerate(CALL_CATEGORIES)}
@@ -261,6 +261,15 @@ def poll_list(name: str, desc: str, start: str) -> bytes:
     put(r, 1, name, 13)
     put(r, 14, desc, 61)
     put(r, 79, start, 6)
+    return bytes(r)
+
+
+def options(name: str, desc: str, codes: tuple[str, str, str, str, str]) -> bytes:
+    """PARAM/MISCOPT.DAT record (420 bytes): name, description and the five security codes."""
+    r = bytearray(named(420, name))
+    put(r, 14, desc.ljust(60), 61)
+    for (_, _, off), code in zip(SECURITY_CODES, codes):
+        put(r, off, code, 5)
     return bytes(r)
 
 
@@ -648,6 +657,15 @@ def make_demo(
     )
     (x / "PARAM/CALLCOST.DAT").write_bytes(fixed_file(36781, [named(36781, n) for n in rate_names.values()]))
     (x / "PARAM/MISCOPT.DAT").write_bytes(
-        fixed_file(420, [named(420, n) for n in ("STANDARD", "NIGHT-POLL")])
+        fixed_file(
+            420,
+            [
+                options(n, d, c)
+                for n, d, c in (
+                    ("STANDARD", "Standard options", ("4821", "1735", "1735", "9062", "0000")),
+                    ("NIGHT-POLL", "Report at night", ("4821", "2468", "2468", "9062", "0000")),
+                )
+            ],
+        )
     )
     return x

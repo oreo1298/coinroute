@@ -18,7 +18,7 @@ from os import PathLike
 from pathlib import Path
 
 from .fields import phone_display
-from .xnet import call_accounting_counters, call_detail, coin_extras
+from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields
 
 FMT = "%Y-%m-%d %H:%M"
 OK_DAYS = 2  # last good poll at most this many days before the data ends -> "OK"
@@ -415,10 +415,14 @@ class RouteDB:
         )
 
     def options_records(self) -> list[dict]:
-        return self._all(
-            "SELECT o.name, (SELECT count(*) FROM sites s WHERE s.options_record=o.name) sites "
+        """Options records with description, security codes and how many sites use each."""
+        rows = self._all(
+            "SELECT o.name, (SELECT count(*) FROM sites s WHERE s.options_record=o.name) sites, o.raw "
             "FROM options_records o ORDER BY o.name"
         )
+        for r in rows:
+            r.update(options_fields(r.pop("raw") or b""))
+        return rows
 
 
 def export_csv(

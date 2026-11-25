@@ -308,5 +308,24 @@ def user_record(r: bytes) -> dict:
 
 
 def named_record(r: bytes) -> dict:
-    """PARAM/CALLCOST.DAT and PARAM/MISCOPT.DAT: only the name is decoded so far."""
+    """PARAM/CALLCOST.DAT and PARAM/MISCOPT.DAT: only the name is decoded at import."""
     return {"name": cstr(r[1:14]), "raw": r}
+
+
+# Security codes in an options record (PARAM/MISCOPT.DAT), 4 digits + NUL each, in the order
+# ExpressNet's options editor asks for them.
+SECURITY_CODES = [
+    ("access", "Security access", 89),
+    ("coin_collection", "Coin collection (*#1)", 94),
+    ("coin_box_amount", "Coin box amount (*#4, *#5)", 99),
+    ("cdr", "CDR retrieval", 104),
+    ("credit_express", "Credit Express", 109),
+]
+
+
+def options_fields(r: bytes) -> dict:
+    """Decoded fields of a PARAM/MISCOPT.DAT record (420 bytes): description and security codes."""
+    d = {"description": cstr(r[14:75]) if len(r) >= 75 else ""}
+    for key, _, off in SECURITY_CODES:
+        d[f"code_{key}"] = cstr(r[off:off + 5]) if len(r) >= off + 5 else ""
+    return d

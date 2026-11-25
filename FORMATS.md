@@ -216,10 +216,32 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 | LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅ |
 | LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; weekday flags around 87–103 ❓ |
 | PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; rate tables ❓ |
-| PARAM/MISCOPT.DAT | 420 | name [13] @1 ✅; phone options ❓ |
+| PARAM/MISCOPT.DAT | 420 | options record, see below |
 | SITES/OPTNCNFG, OPTNHIST, OPTNDESC | | ❓ |
 | LOCAL/REPCTL, RPTQUE, PRINTERS, EDMANPOL | | ❓ (reports, printers, manual polls) |
 | PARAM/SOFTWARE/DD*.* | | phone firmware; text header `name size blocks\r\n`, then what look like download blocks ❓ |
+
+## PARAM/MISCOPT.DAT — 420 bytes, phone options ("options record")
+
+Each site names one options record (SITES.DAT @112). ExpressNet's options
+editor (EDITMISC.C) holds the phone's numbers, call-in windows, report schedule,
+coin settings and the security codes the phone asks for.
+
+| Off | Size | Field | |
+|---|---|---|---|
+| 1 | 13 | name | ✅ |
+| 14 | 61 | description | ✅ |
+| 89 | 5 | security access code, 4 digits + NUL | 🟡 order follows the editor's fields |
+| 94 | 5 | coin collection code (\*#1) | 🟡 |
+| 99 | 5 | coin box amount code (\*#4, \*#5) | 🟡 |
+| 104 | 5 | CDR retrieval code | 🟡 |
+| 109 | 5 | Credit Express code | 🟡 |
+| 116, 131 | 11 each | phone numbers, nearly always blank | ❓ |
+| 319 | 11 | an 11-digit number, the same in every record of a real installation | ❓ probably one of the editor's numbers (reporting, validation, reroute, PBX) |
+| rest | | call-in windows, report schedule, cash box volume, coin settings, display messages … | ❓ |
+
+The codes are present in 50 of 52 records of a real installation and differ
+between the five fields in 46, so each field holds its own code.
 
 ## Known damage patterns
 

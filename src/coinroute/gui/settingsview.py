@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import RouteDB
+from ..xnet import SECURITY_CODES
 from .detail import fit_columns, make_table, note
 from .models import RIGHT, Column, RowsModel
 from .style import count
@@ -49,6 +50,38 @@ class UsersModel(RowsModel):
             if role == Qt.ItemDataRole.ToolTipRole:
                 return None
             return row["password"] if self.show_passwords else MASK
+        return NotImplemented
+
+
+class OptionsModel(RowsModel):
+    """Options records; the security codes are masked until shown."""
+
+    CODES = [f"code_{key}" for key, _, _ in SECURITY_CODES]
+
+    def __init__(self):
+        super().__init__(
+            [
+                Column("Options record", "name"),
+                Column("Description", "description"),
+                Column("Sites", "sites", count, RIGHT),
+            ]
+            + [
+                Column(label, f"code_{key}", mono=True, tip=f"{label} security code")
+                for key, label, _ in SECURITY_CODES
+            ]
+        )
+        self.show_codes = False
+
+    def set_show(self, on: bool) -> None:
+        self.show_codes = on
+        if self.rows:
+            self.dataChanged.emit(self.index(0, 3), self.index(len(self.rows) - 1, self.columnCount() - 1))
+
+    def cell(self, row, col, role):
+        if col.key in self.CODES and role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+            if role == Qt.ItemDataRole.ToolTipRole or not row.get(col.key):
+                return None
+            return row[col.key] if self.show_codes else "••••"
         return NotImplemented
 
 
@@ -196,21 +229,23 @@ class SettingsView(QWidget):
         # Rate & option records
         p = Page(
             "Rate & option records",
-            "Only the record names are decoded so far; the rate tables and options "
-            "themselves are kept as raw bytes.",
+            "Each site points to one rate record (call costs) and one options record. Rate tables are "
+            "not decoded yet. The security codes are what the phone asks for before it answers a poll; "
+            "keep them private.",
         )
         self.rates_model = RowsModel(
             [Column("Rate record", "name"), Column("Sites using it", "sites", count, RIGHT)]
         )
-        self.options_model = RowsModel(
-            [Column("Options record", "name"), Column("Sites using it", "sites", count, RIGHT)]
-        )
+        self.options_model = OptionsModel()
         self.rates = make_table(self.rates_model, stretch=0)
-        self.options = make_table(self.options_model, stretch=0)
-        h = QHBoxLayout()
-        h.addWidget(self.rates)
-        h.addWidget(self.options)
-        p.lay.addLayout(h, 1)
+        self.options = make_table(self.options_model, stretch=1)
+        self.show_codes = QCheckBox("Show security codes")
+        self.show_codes.toggled.connect(self.options_model.set_show)
+        p.lay.addWidget(QLabel("<b>Options records</b>"))
+        p.lay.addWidget(self.show_codes)
+        p.lay.addWidget(self.options, 2)
+        p.lay.addWidget(QLabel("<b>Rate records</b>"))
+        p.lay.addWidget(self.rates, 1)
         self.stack.addWidget(p)
 
         lay = QHBoxLayout(self)
@@ -222,6 +257,7 @@ class SettingsView(QWidget):
     def set_db(self, db: RouteDB | None) -> None:
         self.db = db
         self.show_pw.setChecked(False)
+        self.show_codes.setChecked(False)
         sysrec = (db.system() if db else None) or {}
         meta = db.meta() if db else {}
         values = {

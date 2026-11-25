@@ -241,3 +241,12 @@ def test_call_detail_and_accounting_decode():
     cats = xnet.call_accounting_counters(rec)
     assert [(c["category"], c["calls"], c["money_cents"], c["minutes"]) for c in cats] == [
         ("Local Coin", 12, 240, 21), ("911", 1, 0, 2)]
+
+
+def test_options_record_security_codes():
+    from coinroute.demo import options
+    r = options("STANDARD", "Standard options", ("4821", "1735", "2468", "9062", "0000"))
+    f = xnet.options_fields(r)
+    assert f["description"] == "Standard options"
+    assert [f[f"code_{k}"] for k, _, _ in xnet.SECURITY_CODES] == ["4821", "1735", "2468", "9062", "0000"]
+    assert xnet.named_record(r)["name"] == "STANDARD"
