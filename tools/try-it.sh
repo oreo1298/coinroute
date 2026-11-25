@@ -4,6 +4,8 @@
 #   bash tools/try-it.sh            update, install into .venv, run the tests, open the demo route
 #   bash tools/try-it.sh --no-gui   ... but don't open the app at the end
 #   bash tools/try-it.sh --shots    ... and also save screenshots of every screen as your desktop draws them
+#   bash tools/try-it.sh --system-qt   use the distribution's PySide6 (sudo pacman -S pyside6): on KDE
+#                                      that one loads Breeze; pip's PySide6 can't, so the app uses Fusion
 #
 # Everything goes into .venv inside the checkout (ignored by git) and a demo route in
 # ~/.cache/coinroute-demo. Nothing is installed system-wide and no real data is touched.
@@ -11,11 +13,13 @@ set -uo pipefail
 
 gui=1
 shots=0
+system_qt=0
 for arg in "$@"; do
   case "$arg" in
     --no-gui) gui=0 ;;
     --shots) shots=1 ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --system-qt) system_qt=1 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -32,12 +36,26 @@ PY=${PYTHON:-python3}
 command -v "$PY" >/dev/null || die "$PY not found. On Arch/CachyOS: sudo pacman -S python"
 "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || die "coinroute needs Python 3.11 or newer"
 
+venv_uses_system() { grep -qiE 'include-system-site-packages *= *true' .venv/pyvenv.cfg 2>/dev/null; }
+
 say "Installing into .venv"
+if [ "$system_qt" = 1 ]; then
+  "$PY" -c 'import PySide6' 2>/dev/null || die "no system PySide6. Install it with: sudo pacman -S pyside6"
+  if [ -d .venv ] && ! venv_uses_system; then
+    echo "Recreating .venv to use the system PySide6"
+    rm -rf .venv
+  fi
+  if [ ! -x .venv/bin/python ]; then
+    "$PY" -m venv --system-site-packages .venv || die "could not create .venv"
+  fi
+fi
 if [ ! -x .venv/bin/python ]; then
   "$PY" -m venv .venv || die "could not create .venv"
 fi
 .venv/bin/python -m pip install -q --upgrade pip
-if ! .venv/bin/python -m pip install -q -e '.[gui]' pytest pytest-qt; then
+if venv_uses_system && "$PY" -c 'import PySide6' 2>/dev/null; then
+  .venv/bin/python -m pip install -q -e . pytest pytest-qt || die "pip install failed"
+elif ! .venv/bin/python -m pip install -q -e '.[gui]' pytest pytest-qt; then
   # pip had no PySide6 for this Python: fall back to the distribution's package if it is there
   if "$PY" -c 'import PySide6' 2>/dev/null; then
     echo "pip could not install PySide6; using the system one instead"
@@ -48,7 +66,8 @@ if ! .venv/bin/python -m pip install -q -e '.[gui]' pytest pytest-qt; then
     die "pip could not install PySide6. Install it with 'sudo pacman -S pyside6', then run this again"
   fi
 fi
-.venv/bin/python -c 'import PySide6; print("PySide6", PySide6.__version__)' || die "PySide6 does not load"
+.venv/bin/python -c 'import PySide6, os; print("PySide6", PySide6.__version__, "from", os.path.dirname(PySide6.__file__))' \
+  || die "PySide6 does not load"
 
 say "Running the tests (headless)"
 tests_ok=1

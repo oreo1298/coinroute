@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from .. import __version__
 from .mainwindow import MainWindow
+from .theme import fix_fallback_theme
 
 
 def make_app(argv: list[str] | None = None) -> QApplication:
@@ -16,6 +17,7 @@ def make_app(argv: list[str] | None = None) -> QApplication:
     app.setOrganizationName("coinroute")
     app.setApplicationName("coinroute")
     app.setApplicationVersion(__version__)
+    fix_fallback_theme(app)
     return app
 
 

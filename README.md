@@ -88,7 +88,8 @@ coinroute gui /tmp/demo.db
 - `tools/try-it.sh` — one command to update a checkout, install into `.venv`,
   run the tests and open the app on the demo route: `bash tools/try-it.sh`
   (`--shots` also saves screenshots as your desktop draws them, `--no-gui`
-  stops before opening the app).
+  stops before opening the app, `--system-qt` uses your distribution's
+  PySide6 — on KDE that is the one that draws with Breeze).
 
 ## Tests
 
