@@ -107,6 +107,7 @@ class SettingsView(QWidget):
         for title, rows in sections:
             g = QGroupBox(title)
             form = QFormLayout(g)
+            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             for label, key in rows:
                 lab = QLabel(label + ":")
                 lab.setMinimumWidth(label_w + 4)

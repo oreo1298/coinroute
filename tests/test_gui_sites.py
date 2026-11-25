@@ -103,3 +103,28 @@ def test_sort_role_is_python_value(qtbot, db):
     qtbot.addWidget(v)
     v.set_db(db)
     assert isinstance(v.model.index(0, STATUS_COL).data(SortRole), tuple)
+
+
+def test_columns_fit_the_width_without_sideways_scrolling(qtbot, qapp, db):
+    base = qapp.font()
+    big = qapp.font()
+    big.setPointSizeF(base.pointSizeF() * 1.15)  # wider cells, as with Breeze's font and padding
+    qapp.setFont(big)
+    try:
+        v = SitesView()
+        qtbot.addWidget(v)
+        v.resize(1300, 420)  # short, so the vertical scrollbar is needed once the rows are in
+        v.show()
+        qtbot.waitExposed(v)
+        v.set_db(db)
+        qtbot.wait(50)  # let the scrollbars settle
+        hh = v.table.horizontalHeader()
+        assert v.table.verticalScrollBar().isVisible()
+        assert not v.table.horizontalScrollBar().isVisible()
+        assert sum(hh.sectionSize(c) for c in range(hh.count())) <= v.table.viewport().width()
+        assert hh.sectionSize(2) >= v.FLOOR  # description squeezed, not crushed
+        idx = v.proxy.index(0, 2)  # the full text of a squeezed cell is in its tooltip
+        assert idx.data(Qt.ItemDataRole.ToolTipRole) == idx.data()
+        assert v.minimumSizeHint().width() < 1100  # the totals line wraps instead of widening the view
+    finally:
+        qapp.setFont(base)

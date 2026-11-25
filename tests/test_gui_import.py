@@ -94,3 +94,21 @@ def test_dialogs_open_at_their_natural_height(qtbot, demo_xnet, tmp_path):
     prog = ImportProgressDialog(ImportJob(demo_xnet, tmp_path / "p.db"))
     qtbot.addWidget(prog)
     assert prog.height() == prog.sizeHint().height()
+
+
+def test_form_fields_use_full_width_under_breeze_like_styles(qtbot, qapp, demo_xnet):
+    from PySide6.QtWidgets import QFormLayout, QProxyStyle, QStyle
+
+    class BreezeLike(QProxyStyle):  # Breeze only grows fields with an Expanding size policy
+        def styleHint(self, hint, option=None, widget=None, returnData=None):
+            if hint == QStyle.StyleHint.SH_FormLayoutFieldGrowthPolicy:
+                return QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow.value
+            return super().styleHint(hint, option, widget, returnData)
+
+    dlg = ImportDialog(source=str(demo_xnet))
+    dlg.setStyle(BreezeLike("Fusion"))
+    qtbot.addWidget(dlg)
+    dlg.show()
+    qtbot.waitExposed(dlg)
+    note, field = dlg.source_note, dlg.source.parentWidget()
+    assert note.width() >= field.width() - 2  # the note spans the field column, so it doesn't wrap early

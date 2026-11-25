@@ -116,6 +116,7 @@ class InfoTab(QScrollArea):
         def box(title: str, rows: list[tuple[str, str, str]]) -> QGroupBox:
             g = QGroupBox(title)
             f = QFormLayout(g)
+            f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             f.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
             f.setHorizontalSpacing(14)
             for label, key, value in rows:

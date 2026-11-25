@@ -67,7 +67,7 @@ class SitesModel(RowsModel):
                 f"Coins collected by the phone in the last {days} days of data",
             ),
             Column(
-                f"Failed calls ({days} d)",
+                f"Failures ({days} d)",
                 "failed_calls_in_window",
                 count,
                 RIGHT,
@@ -246,7 +246,7 @@ class SitesView(QWidget):
         self.days.setValue(30)
         self.days.setSuffix(" days")
         self.days.setToolTip(
-            "Window for the Coins and Failed calls columns, counted back from the end of the data"
+            "Window for the Coins and Failures columns, counted back from the end of the data"
         )
         self._reload_timer = QTimer(self)
         self._reload_timer.setSingleShot(True)
@@ -288,6 +288,7 @@ class SitesView(QWidget):
         self.chips[None].setChecked(True)
         chips.addSpacing(12)
         self.totals = QLabel()
+        self.totals.setWordWrap(True)  # one long line would set the whole view's minimum width
         self.totals.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         chips.addWidget(self.totals, 1)
 
@@ -355,31 +356,49 @@ class SitesView(QWidget):
         self._update_chips()
 
     SQUEEZABLE = (2, 9, 3)  # description, main failure, city: give up width first when space is short
+    FLOOR = 110  # narrowest a squeezed column gets (its full text is in the tooltip)
+    PAD = 12  # breathing room added to each column when the table has space for it
 
     def _fit_columns(self) -> None:
+        """Size columns to their contents, then fit the table's width without a sideways scrollbar.
+
+        Styles pad cells differently (Breeze much more than Fusion), so the padding is only added
+        when there is room, and the long text columns give up width when there isn't.
+        """
         hh = self.table.horizontalHeader()
         self.table.resizeColumnsToContents()
         for c in range(self.model.columnCount()):
-            hh.resizeSection(c, min(max(hh.sectionSize(c) + 12, 64), 340))
-        self._squeeze()
-
-    def _squeeze(self) -> None:
-        """Narrow the long text columns (down to a floor) so the table fits without scrolling sideways."""
-        hh = self.table.horizontalHeader()
-        avail = self.table.viewport().width()
-        if avail <= 0 or not self.isVisible():
+            hh.resizeSection(c, min(max(hh.sectionSize(c), 56), 340))
+        avail = self.table.viewport().width() if self.isVisible() else 0
+        vbar = self.table.verticalScrollBar()
+        if avail > 0 and not vbar.isVisible() and (
+            self.table.verticalHeader().length() > self.table.viewport().height()
+        ):
+            # the rows won't fit, so a vertical scrollbar is about to take some of the width
+            avail -= self.table.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent, None, vbar)
+        if avail <= 0:  # not laid out yet; fitted again when first shown
+            for c in range(hh.count()):
+                hh.resizeSection(c, hh.sectionSize(c) + self.PAD)
             return
-        excess = sum(hh.sectionSize(c) for c in range(hh.count())) - avail
+        self._fitted_visible = True
+        spare = avail - sum(hh.sectionSize(c) for c in range(hh.count()))
+        if spare >= 0:
+            pad = min(self.PAD, spare // max(1, hh.count()))
+            for c in range(hh.count()):
+                hh.resizeSection(c, hh.sectionSize(c) + pad)
+            return
+        excess = -spare
         for c in self.SQUEEZABLE:
             if excess <= 0:
                 break
-            cut = min(excess, max(0, hh.sectionSize(c) - 140))
+            cut = min(excess, max(0, hh.sectionSize(c) - self.FLOOR))
             hh.resizeSection(c, hh.sectionSize(c) - cut)
             excess -= cut
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
-        QTimer.singleShot(0, self._squeeze)
+        if not getattr(self, "_fitted_visible", False):  # once; later the user's own widths stay
+            QTimer.singleShot(0, self._fit_columns)
 
     # --- filters ---
 
