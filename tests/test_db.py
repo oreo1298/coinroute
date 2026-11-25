@@ -158,11 +158,10 @@ def test_call_accounting_and_settings(demo_db):
         assert db.users()[0]["password"] == "PROTELX3"
         assert db.ports()[0]["modem_name"] == "UPMS1200" and db.ports()[0]["line_number"] == "555-0100"
         assert {m["name"] for m in db.modems()} == {"UPMS1200", "GENERIC"}
-        assert db.poll_lists()[0] == {
-            "name": "NIGHTLY",
-            "description": "Every phone, every night",
-            "start_time": "01:00",
-        }
+        pl = db.poll_lists()
+        assert {k: pl[0][k] for k in ("name", "description", "start_time")} == {
+            "name": "NIGHTLY", "description": "Every phone, every night", "start_time": "01:00"}
+        assert pl[0]["days_text"] == "every day" and pl[1]["days"] == ["Mon", "Tue", "Wed", "Thu", "Fri"]
         groups = db.group_table()
         assert sum(g["sites"] for g in groups) == 20 and all(g["defined"] for g in groups)
         assert sum(r["sites"] for r in db.rate_records()) == 20

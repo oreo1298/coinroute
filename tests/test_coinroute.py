@@ -250,3 +250,10 @@ def test_options_record_security_codes():
     assert f["description"] == "Standard options"
     assert [f[f"code_{k}"] for k, _, _ in xnet.SECURITY_CODES] == ["4821", "1735", "2468", "9062", "0000"]
     assert xnet.named_record(r)["name"] == "STANDARD"
+
+
+def test_poll_list_days():
+    from coinroute.demo import poll_list
+    assert xnet.poll_list_days(poll_list("N", "nightly", "01:00")) == xnet.WEEKDAYS
+    assert xnet.poll_list_days(poll_list("W", "weekdays", "08:00", days="-MTWTF-")) == ["Mon", "Tue", "Wed", "Thu",
+                                                                                           "Fri"]

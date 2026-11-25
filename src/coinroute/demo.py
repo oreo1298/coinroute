@@ -256,11 +256,15 @@ def group(no: str) -> bytes:
     return bytes(r)
 
 
-def poll_list(name: str, desc: str, start: str) -> bytes:
+def poll_list(name: str, desc: str, start: str, number: int = 1, days: str = "SMTWTFS") -> bytes:
+    """LOCAL/POLLIST.DAT record; `days` marks Sunday..Saturday (a '-' leaves that day out)."""
     r = bytearray(231)
     put(r, 1, name, 13)
     put(r, 14, desc, 61)
+    struct.pack_into("<I", r, 75, number)
     put(r, 79, start, 6)
+    for i, c in enumerate(days[:7]):
+        struct.pack_into("<H", r, 91 + 2 * i, 0 if c == "-" else 1)
     return bytes(r)
 
 
@@ -649,9 +653,9 @@ def make_demo(
         fixed_file(
             231,
             [
-                poll_list("NIGHTLY", "Every phone, every night", "01:00"),
-                poll_list("MORNING", "Re-poll phones that failed overnight", "08:00"),
-                poll_list("INCOMING", "Window for phones that call in", "03:00"),
+                poll_list("NIGHTLY", "Every phone, every night", "01:00", 1),
+                poll_list("MORNING", "Re-poll phones that failed overnight", "08:00", 2, "-MTWTF-"),
+                poll_list("INCOMING", "Window for phones that call in", "03:00", 3, "-------"),
             ],
         )
     )

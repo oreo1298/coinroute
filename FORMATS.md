@@ -214,7 +214,7 @@ and the result is `strcpy`'d (a 0 byte truncates it).
 | LOCAL/PORTS.DAT | 313 | port no u8 @1, modem name [21] @3, description [41] @24, init [41] @65, answer [41] @106, three dial strings [21] @147/168/189, reset [21] @210, line number [14] @232 ✅; speeds/framing ("1200", "9600", "N82") around 246–311 ❓ |
 | PARAM/MODEMS.DAT | 230 | name [21] @1, description [41] @22, init [41] @63, answer [41] @104, dial ×3 [21] @145/166/187, reset [21] @208 ✅ |
 | LOCAL/GROUPS.DAT | 22 | group number [7] @1 ✅ |
-| LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; weekday flags around 87–103 ❓ |
+| LOCAL/POLLIST.DAT | 231 | name [13] @1, description [61] @14, start time `hh:mm` @79 ✅; list number u32 @75 🟡; seven u16 day flags @91, Sunday first 🟡 (order of ExpressNet's poll-list editor; nightly lists have all seven set); a timestamp (u32 minutes) @109 and more u16 flags from 113 ❓ |
 | PARAM/CALLCOST.DAT | 36781 | name [13] @1 ✅; rate tables ❓ |
 | PARAM/MISCOPT.DAT | 420 | options record, see below |
 | SITES/OPTNCNFG, OPTNHIST, OPTNDESC | | ❓ |

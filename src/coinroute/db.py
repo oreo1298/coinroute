@@ -18,7 +18,7 @@ from os import PathLike
 from pathlib import Path
 
 from .fields import phone_display
-from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields
+from .xnet import call_accounting_counters, call_detail, coin_extras, options_fields, poll_list_days
 
 FMT = "%Y-%m-%d %H:%M"
 OK_DAYS = 2  # last good poll at most this many days before the data ends -> "OK"
@@ -481,7 +481,12 @@ class RouteDB:
         )
 
     def poll_lists(self) -> list[dict]:
-        return self._all("SELECT name, description, start_time FROM poll_lists ORDER BY rowid")
+        rows = self._all("SELECT name, description, start_time, raw FROM poll_lists ORDER BY rowid")
+        for r in rows:
+            days = poll_list_days(r.pop("raw") or b"")
+            r["days"] = days
+            r["days_text"] = "every day" if len(days) == 7 else (", ".join(days) or "no days")
+        return rows
 
     def group_table(self) -> list[dict]:
         """Groups with how many sites each holds (groups used by sites but not defined are included)."""

@@ -297,6 +297,14 @@ def poll_list_record(r: bytes) -> dict:
     }
 
 
+WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+
+def poll_list_days(r: bytes) -> list[str]:
+    """The weekdays a poll list runs on: seven u16 flags at 91, Sunday first (the editor's order)."""
+    return [d for i, d in enumerate(WEEKDAYS) if len(r) >= 93 + 2 * i and r[91 + 2 * i]]
+
+
 def user_record(r: bytes) -> dict:
     """SYSTEM/PASSWORD.DAT (83 bytes): ExpressNet logins."""
     return {
