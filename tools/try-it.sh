@@ -11,6 +11,23 @@
 # ~/.cache/coinroute-demo. Nothing is installed system-wide and no real data is touched.
 set -uo pipefail
 
+cd "$(dirname "$0")/.." || exit 1
+say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+die() { printf '\n\033[1;31mStopped: %s\033[0m\n' "$*" >&2; exit 1; }
+
+# Update first, before reading the options: a newer version of this script may know options
+# the old copy doesn't. If the pull changed the script, start the new one with the same options.
+if [ -z "${COINROUTE_TRY_IT_UPDATED:-}" ]; then
+  say "Updating $(git branch --show-current 2>/dev/null || echo checkout)"
+  before=$(git hash-object tools/try-it.sh 2>/dev/null)
+  git pull --ff-only || echo "(could not pull; using the copy you have)"
+  if [ "$(git hash-object tools/try-it.sh 2>/dev/null)" != "$before" ]; then
+    echo "try-it.sh itself was updated; restarting it"
+    COINROUTE_TRY_IT_UPDATED=1 exec bash tools/try-it.sh "$@"
+  fi
+fi
+git log --oneline -1
+
 gui=1
 shots=0
 system_qt=0
@@ -20,17 +37,9 @@ for arg in "$@"; do
     --shots) shots=1 ;;
     --system-qt) system_qt=1 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) echo "unknown option: $arg" >&2; exit 2 ;;
+    *) echo "unknown option: $arg (try: bash tools/try-it.sh --help)" >&2; exit 2 ;;
   esac
 done
-
-cd "$(dirname "$0")/.." || exit 1
-say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-die() { printf '\n\033[1;31mStopped: %s\033[0m\n' "$*" >&2; exit 1; }
-
-say "Updating $(git branch --show-current 2>/dev/null || echo checkout)"
-git pull --ff-only || echo "(could not pull; using the copy you have)"
-git log --oneline -1
 
 PY=${PYTHON:-python3}
 command -v "$PY" >/dev/null || die "$PY not found. On Arch/CachyOS: sudo pacman -S python"
